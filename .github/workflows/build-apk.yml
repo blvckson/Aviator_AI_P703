@@ -23,10 +23,11 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Show dependencies
+        run: gradle :app:dependencies --configuration debugRuntimeClasspath
+
       - name: Build APK
-  run: |
-    gradle :app:dependencies --configuration debugRuntimeClasspath
-    gradle assembleDebug
+        run: gradle assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
