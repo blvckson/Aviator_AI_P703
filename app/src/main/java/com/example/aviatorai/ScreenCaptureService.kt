@@ -187,7 +187,7 @@ class ScreenCaptureService : Service() {
             text
                 .replace(',', '.')
                 .replace('X', 'x')
-                .replace(' ', '')
+                .replace(" ", "")
 
         val pattern =
             Pattern.compile(
