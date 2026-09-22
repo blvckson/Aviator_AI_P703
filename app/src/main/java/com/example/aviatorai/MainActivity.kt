@@ -15,8 +15,8 @@ class MainActivity : Activity() {
 
     companion object {
         private const val SCREEN_CAPTURE_REQUEST = 1001
-        private const val MULTIPLIER_ACTION =
-            "com.example.aviatorai.MULTIPLIER_DETECTED"
+        private const val ROUND_COMPLETED_ACTION =
+    "com.example.aviatorai.ROUND_COMPLETED"
     }
 
     private lateinit var statusText: TextView
@@ -24,7 +24,7 @@ class MainActivity : Activity() {
 
     private val multiplierReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == MULTIPLIER_ACTION) {
+            if (intent?.action == ROUND_COMPLETED_ACTION) {
                 val multiplier =
                     intent.getDoubleExtra("multiplier", -1.0)
 
