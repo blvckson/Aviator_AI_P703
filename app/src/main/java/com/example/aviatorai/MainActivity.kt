@@ -1,4 +1,4 @@
-            statusText.textpackage com.example.aviatorai
+package com.example.aviatorai
 
 import android.app.Activity
 import android.content.BroadcastReceiver
@@ -24,20 +24,16 @@ class MainActivity : Activity() {
 
     private val multiplierReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-
             if (intent?.action == MULTIPLIER_ACTION) {
-
                 val multiplier =
                     intent.getDoubleExtra("multiplier", -1.0)
 
                 if (multiplier >= 1.0) {
-
-                    detectedText.text =
-                        String.format(
-                            Locale.US,
-                            "Detected multiplier: %.2fx",
-                            multiplier
-                        )
+                    detectedText.text = String.format(
+                        Locale.US,
+                        "Detected multiplier: %.2fx",
+                        multiplier
+                    )
                 }
             }
         }
@@ -59,12 +55,8 @@ class MainActivity : Activity() {
 
         stopButton.setOnClickListener {
             stopService(
-                Intent(
-                    this,
-                    ScreenCaptureService::class.java
-                )
+                Intent(this, ScreenCaptureService::class.java)
             )
-
             statusText.text = "Monitor stopped"
         }
     }
@@ -72,8 +64,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
 
-        val filter =
-            IntentFilter(MULTIPLIER_ACTION)
+        val filter = IntentFilter(MULTIPLIER_ACTION)
 
         registerReceiver(
             multiplierReceiver,
@@ -87,11 +78,9 @@ class MainActivity : Activity() {
     }
 
     private fun requestScreenCapture() {
-
         val manager =
-            getSystemService(
-                MEDIA_PROJECTION_SERVICE
-            ) as MediaProjectionManager
+            getSystemService(MEDIA_PROJECTION_SERVICE)
+                    as MediaProjectionManager
 
         val intent =
             manager.createScreenCaptureIntent()
@@ -108,7 +97,6 @@ class MainActivity : Activity() {
         resultCode: Int,
         data: Intent?
     ) {
-
         super.onActivityResult(
             requestCode,
             resultCode,
@@ -120,13 +108,11 @@ class MainActivity : Activity() {
             resultCode == RESULT_OK &&
             data != null
         ) {
-
             val serviceIntent =
                 Intent(
                     this,
                     ScreenCaptureService::class.java
                 ).apply {
-
                     putExtra(
                         "resultCode",
                         resultCode
