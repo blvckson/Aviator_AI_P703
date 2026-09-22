@@ -45,11 +45,9 @@ class ScreenCaptureService : Service() {
     private var lastProcessedTime = 0L
 
     private var lastLiveMultiplier: Double? = null
-
-    private var stableRedMultiplier: Double? = null
-    private var stableRedCount = 0
-
     private var lastRecordedMultiplier: Double? = null
+
+    private var whiteMultiplierSeen = false
 
     override fun onCreate() {
         super.onCreate()
@@ -79,11 +77,13 @@ class ScreenCaptureService : Service() {
             getSystemService(MEDIA_PROJECTION_SERVICE)
                     as MediaProjectionManager
 
-        mediaProjection =
-            projectionManager.getMediaProjection(
-                resultCode,
-                data
-            )
+        if (mediaProjection == null) {
+            mediaProjection =
+                projectionManager.getMediaProjection(
+                    resultCode,
+                    data
+                )
+        }
 
         if (virtualDisplay == null) {
             startCapture()
@@ -101,10 +101,10 @@ class ScreenCaptureService : Service() {
                     CHANNEL_ID,
                     "Aviator Screen Monitor",
                     NotificationManager.IMPORTANCE_LOW
-                ).apply {
-                    description =
-                        "Keeps Aviator AI screen monitoring active"
-                }
+                )
+
+            channel.description =
+                "Aviator AI screen monitoring"
 
             val manager =
                 getSystemService(
@@ -174,7 +174,7 @@ class ScreenCaptureService : Service() {
                 val now =
                     System.currentTimeMillis()
 
-                if (now - lastProcessedTime < 400L) {
+                if (now - lastProcessedTime < 250L) {
                     reader.acquireLatestImage()?.close()
                     return@setOnImageAvailableListener
                 }
@@ -246,16 +246,71 @@ class ScreenCaptureService : Service() {
 
     private fun processFrame(bitmap: Bitmap) {
 
+        /*
+         * Aviator's multiplier is in the central area.
+         * Crop the middle portion before OCR so that
+         * unrelated screen text does not confuse ML Kit.
+         */
+
+        val cropWidth =
+            (bitmap.width * 0.70f).toInt()
+
+        val cropHeight =
+            (bitmap.height * 0.45f).toInt()
+
+        val cropLeft =
+            ((bitmap.width - cropWidth) / 2)
+                .coerceAtLeast(0)
+
+        val cropTop =
+            ((bitmap.height - cropHeight) / 2)
+                .coerceAtLeast(0)
+
+        val safeWidth =
+            cropWidth.coerceAtMost(
+                bitmap.width - cropLeft
+            )
+
+        val safeHeight =
+            cropHeight.coerceAtMost(
+                bitmap.height - cropTop
+            )
+
+        if (safeWidth <= 0 || safeHeight <= 0) {
+            bitmap.recycle()
+            return
+        }
+
+        val croppedBitmap =
+            try {
+                Bitmap.createBitmap(
+                    bitmap,
+                    cropLeft,
+                    cropTop,
+                    safeWidth,
+                    safeHeight
+                )
+            } catch (_: Exception) {
+                bitmap.recycle()
+                return
+            }
+
+        if (croppedBitmap !== bitmap &&
+            !bitmap.isRecycled
+        ) {
+            bitmap.recycle()
+        }
+
         ocrExecutor.execute {
 
             val inputImage =
                 try {
                     InputImage.fromBitmap(
-                        bitmap,
+                        croppedBitmap,
                         0
                     )
                 } catch (_: Exception) {
-                    bitmap.recycle()
+                    croppedBitmap.recycle()
                     return@execute
                 }
 
@@ -263,25 +318,22 @@ class ScreenCaptureService : Service() {
                 .addOnSuccessListener { result ->
 
                     try {
-
                         processOcrResult(
                             result,
-                            bitmap
+                            croppedBitmap
                         )
-
                     } catch (_: Exception) {
                         // Ignore OCR errors.
                     } finally {
-
-                        if (!bitmap.isRecycled) {
-                            bitmap.recycle()
+                        if (!croppedBitmap.isRecycled) {
+                            croppedBitmap.recycle()
                         }
                     }
                 }
                 .addOnFailureListener {
 
-                    if (!bitmap.isRecycled) {
-                        bitmap.recycle()
+                    if (!croppedBitmap.isRecycled) {
+                        croppedBitmap.recycle()
                     }
                 }
         }
@@ -292,12 +344,22 @@ class ScreenCaptureService : Service() {
         bitmap: Bitmap
     ) {
 
+        /*
+         * Accept:
+         * 1.00x
+         * 1.00X
+         * 1.00×
+         * 1.00
+         * 1,00
+         */
+
         val pattern =
             Pattern.compile(
                 "(\\d+(?:[\\.,]\\d+)?)\\s*[×xX]?"
+            )
 
-        var foundMultiplier: Double? = null
-        var multiplierIsRed = false
+        var detectedValue: Double? = null
+        var detectedIsRed = false
 
         for (block in result.textBlocks) {
 
@@ -305,12 +367,17 @@ class ScreenCaptureService : Service() {
 
                 for (element in line.elements) {
 
-                    val text =
-                        element.text
+                    val rawText =
+                        element.text.trim()
+
+                    val normalizedText =
+                        rawText
                             .replace(',', '.')
 
                     val matcher =
-                        pattern.matcher(text)
+                        pattern.matcher(
+                            normalizedText
+                        )
 
                     if (!matcher.find()) {
                         continue
@@ -321,6 +388,9 @@ class ScreenCaptureService : Service() {
                             ?.toDoubleOrNull()
                             ?: continue
 
+                    /*
+                     * Multiplier validation.
+                     */
                     if (
                         value < 1.0 ||
                         value > 1000000.0
@@ -328,15 +398,15 @@ class ScreenCaptureService : Service() {
                         continue
                     }
 
-                    foundMultiplier = value
+                    detectedValue = value
 
                     val box =
                         element.boundingBox
 
                     if (box != null) {
 
-                        multiplierIsRed =
-                            containsRedMultiplierPixels(
+                        detectedIsRed =
+                            containsRedPixels(
                                 bitmap,
                                 box.left,
                                 box.top,
@@ -348,54 +418,63 @@ class ScreenCaptureService : Service() {
                     break
                 }
 
-                if (foundMultiplier != null) {
+                if (detectedValue != null) {
                     break
                 }
             }
 
-            if (foundMultiplier != null) {
+            if (detectedValue != null) {
                 break
             }
         }
 
-        if (foundMultiplier == null) {
-            return
-        }
-
         val value =
-            foundMultiplier
+            detectedValue
+                ?: return
 
         lastLiveMultiplier = value
 
-        if (!multiplierIsRed) {
+        if (!detectedIsRed) {
 
-            stableRedMultiplier = null
-            stableRedCount = 0
+            /*
+             * White multiplier is still live.
+             */
+            whiteMultiplierSeen = true
 
             sendLiveMultiplier(value)
 
             return
         }
 
-        if (stableRedMultiplier == value) {
-            stableRedCount++
-        } else {
-            stableRedMultiplier = value
-            stableRedCount = 1
+        /*
+         * Red multiplier means the round has ended.
+         *
+         * We only accept it as a completed round if
+         * we previously saw a live multiplier.
+         */
+        if (!whiteMultiplierSeen) {
+            return
         }
 
-        if (
-            stableRedCount >= 2 &&
-            lastRecordedMultiplier != value
-        ) {
+        /*
+         * Record the final red multiplier immediately.
+         * We deliberately do NOT require two red frames,
+         * because the red transition can happen in a blink.
+         */
+        if (lastRecordedMultiplier != value) {
 
             lastRecordedMultiplier = value
 
             recordCompletedRound(value)
         }
+
+        /*
+         * Prepare for the next round.
+         */
+        whiteMultiplierSeen = false
     }
 
-    private fun containsRedMultiplierPixels(
+    private fun containsRedPixels(
         bitmap: Bitmap,
         left: Int,
         top: Int,
