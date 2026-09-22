@@ -205,7 +205,7 @@ class ScreenCaptureService : Service() {
 
         val pattern =
             Pattern.compile(
-                "(\\d+(?:\\.\\d+)?)x",
+               "(\\d+(?:[\\.,]\\d+)?)\\s*[xX]?",
                 Pattern.CASE_INSENSITIVE
             )
 
