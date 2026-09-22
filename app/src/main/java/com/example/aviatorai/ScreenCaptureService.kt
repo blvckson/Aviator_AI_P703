@@ -226,16 +226,22 @@ class ScreenCaptureService : Service() {
             return
         }
 
-        lastDetectedMultiplier = value
+     lastDetectedMultiplier = value
 
-        android.util.Log.d(
-            "AviatorAI",
-            String.format(
-                Locale.US,
-                "VALID MULTIPLIER DETECTED: %.2fx",
-                value
-            )
-        )
+android.util.Log.d(
+    "AviatorAI",
+    String.format(
+        Locale.US,
+        "VALID MULTIPLIER DETECTED: %.2fx",
+        value
+    )
+)
+
+val updateIntent = Intent("com.example.aviatorai.MULTIPLIER_DETECTED").apply {
+    putExtra("multiplier", value)
+}
+
+sendBroadcast(updateIntent)
     }
 
     override fun onDestroy() {
