@@ -151,15 +151,29 @@ class ScreenCaptureService : Service() {
                     InputImage.fromBitmap(bitmap, 0)
 
                 recognizer.process(image)
-                    .addOnSuccessListener { result ->
+    .addOnSuccessListener { result ->
 
-                        val multiplier =
-                            extractMultiplier(result.text)
+        val detectedText = result.text
 
-                        if (multiplier != null) {
-                            handleDetectedMultiplier(multiplier)
-                        }
-                    }
+        android.util.Log.d(
+            "AviatorAI",
+            "OCR TEXT: $detectedText"
+        )
+
+        val multiplier =
+            extractMultiplier(detectedText)
+
+        if (multiplier != null) {
+            handleDetectedMultiplier(multiplier)
+        } else {
+            val updateIntent =
+                Intent("com.example.aviatorai.OCR_DIAGNOSTIC").apply {
+                    putExtra("ocrText", detectedText)
+                }
+
+            sendBroadcast(updateIntent)
+        }
+    }
                     .addOnFailureListener {
                         // OCR failure is ignored.
                     }
