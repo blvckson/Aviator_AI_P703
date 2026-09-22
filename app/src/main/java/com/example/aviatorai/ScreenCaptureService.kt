@@ -294,8 +294,7 @@ class ScreenCaptureService : Service() {
 
         val pattern =
             Pattern.compile(
-                "(\\d+(?:[\\.,]\\d+)?)\\s*[xX]?"
-            )
+                "(\\d+(?:[\\.,]\\d+)?)\\s*[×xX]?"
 
         var foundMultiplier: Double? = null
         var multiplierIsRed = false
