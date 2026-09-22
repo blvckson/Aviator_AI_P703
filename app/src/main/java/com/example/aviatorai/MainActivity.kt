@@ -64,7 +64,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
 
-        val filter = IntentFilter(MULTIPLIER_ACTION)
+   val filter = IntentFilter(ROUND_COMPLETED_ACTION)     
 
         registerReceiver(
             multiplierReceiver,
