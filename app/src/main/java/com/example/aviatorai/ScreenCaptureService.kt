@@ -1,4 +1,4 @@
-```kotlin
+
 package com.example.aviatorai
 
 import android.app.Notification
@@ -906,4 +906,4 @@ class ScreenCaptureService : Service() {
         return null
     }
 }
-```
+
