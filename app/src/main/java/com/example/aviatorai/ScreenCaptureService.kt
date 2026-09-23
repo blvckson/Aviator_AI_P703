@@ -113,11 +113,27 @@ class ScreenCaptureService : Service() {
             intent?.getParcelableExtra<Intent>(
                 "data"
             )
+if (resultCode == -1 || data == null) {
 
-        if (
-            resultCode == -1 ||
-            data == null
-        ) {
+    val reason =
+        when {
+            intent == null ->
+                "ERROR: service received NULL intent"
+
+            resultCode == -1 && data == null ->
+                "ERROR: resultCode AND data missing"
+
+            resultCode == -1 ->
+                "ERROR: resultCode missing"
+
+            else ->
+                "ERROR: data Intent missing"
+        }
+
+    sendDiagnostic(reason)
+
+    return START_NOT_STICKY
+}
 
             sendDiagnostic(
                 "ERROR: screen capture permission data missing"
