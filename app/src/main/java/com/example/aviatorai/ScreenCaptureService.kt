@@ -27,7 +27,6 @@ import java.util.regex.Pattern
 
 class ScreenCaptureService : Service() {
 
-```
 companion object {
     private const val CHANNEL_ID = "aviator_monitor"
     private const val NOTIFICATION_ID = 1001
