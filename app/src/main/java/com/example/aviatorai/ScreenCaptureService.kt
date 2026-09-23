@@ -1,3 +1,4 @@
+```kotlin
 package com.example.aviatorai
 
 import android.app.Notification
@@ -19,6 +20,7 @@ import android.util.DisplayMetrics
 import android.view.WindowManager
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.util.Locale
 import java.util.concurrent.Executors
@@ -27,15 +29,34 @@ import java.util.regex.Pattern
 class ScreenCaptureService : Service() {
 
     companion object {
-        private const val CHANNEL_ID = "aviator_monitor"
-        private const val NOTIFICATION_ID = 1001
+
+        private const val CHANNEL_ID =
+            "aviator_monitor"
+
+        private const val NOTIFICATION_ID =
+            1001
+
+        private const val DIAGNOSTIC_ACTION =
+            "com.example.aviatorai.DIAGNOSTIC"
+
+        private const val LIVE_MULTIPLIER_ACTION =
+            "com.example.aviatorai.MULTIPLIER_LIVE"
+
+        private const val ROUND_COMPLETED_ACTION =
+            "com.example.aviatorai.ROUND_COMPLETED"
     }
 
-    private var mediaProjection: MediaProjection? = null
-    private var virtualDisplay: VirtualDisplay? = null
-    private var imageReader: ImageReader? = null
+    private var mediaProjection:
+            MediaProjection? = null
 
-    private val ocrExecutor = Executors.newSingleThreadExecutor()
+    private var virtualDisplay:
+            VirtualDisplay? = null
+
+    private var imageReader:
+            ImageReader? = null
+
+    private val ocrExecutor =
+        Executors.newSingleThreadExecutor()
 
     private val recognizer =
         TextRecognition.getClient(
@@ -44,14 +65,27 @@ class ScreenCaptureService : Service() {
 
     private var lastProcessedTime = 0L
 
-    private var lastLiveMultiplier: Double? = null
-    private var lastRecordedMultiplier: Double? = null
+    private var lastDiagnosticTime = 0L
+
+    private var frameCount = 0
+
+    private var lastLiveMultiplier:
+            Double? = null
+
+    private var lastRecordedMultiplier:
+            Double? = null
 
     private var whiteMultiplierSeen = false
 
     override fun onCreate() {
+
         super.onCreate()
+
         createNotificationChannel()
+
+        sendDiagnostic(
+            "Monitor service created"
+        )
     }
 
     override fun onStartCommand(
@@ -65,19 +99,40 @@ class ScreenCaptureService : Service() {
             createNotification()
         )
 
+        sendDiagnostic(
+            "Screen capture service started"
+        )
+
         val resultCode =
-            intent?.getIntExtra("resultCode", -1)
-                ?: return START_NOT_STICKY
+            intent?.getIntExtra(
+                "resultCode",
+                -1
+            ) ?: -1
 
         val data =
-            intent.getParcelableExtra<Intent>("data")
-                ?: return START_NOT_STICKY
+            intent?.getParcelableExtra<Intent>(
+                "data"
+            )
+
+        if (
+            resultCode == -1 ||
+            data == null
+        ) {
+
+            sendDiagnostic(
+                "ERROR: screen capture permission data missing"
+            )
+
+            return START_NOT_STICKY
+        }
 
         val projectionManager =
-            getSystemService(MEDIA_PROJECTION_SERVICE)
-                    as MediaProjectionManager
+            getSystemService(
+                MEDIA_PROJECTION_SERVICE
+            ) as MediaProjectionManager
 
         if (mediaProjection == null) {
+
             mediaProjection =
                 projectionManager.getMediaProjection(
                     resultCode,
@@ -85,7 +140,17 @@ class ScreenCaptureService : Service() {
                 )
         }
 
+        if (mediaProjection == null) {
+
+            sendDiagnostic(
+                "ERROR: MediaProjection unavailable"
+            )
+
+            return START_NOT_STICKY
+        }
+
         if (virtualDisplay == null) {
+
             startCapture()
         }
 
@@ -94,7 +159,10 @@ class ScreenCaptureService : Service() {
 
     private fun createNotificationChannel() {
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (
+            Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.O
+        ) {
 
             val channel =
                 NotificationChannel(
@@ -111,20 +179,30 @@ class ScreenCaptureService : Service() {
                     NotificationManager::class.java
                 )
 
-            manager.createNotificationChannel(channel)
+            manager.createNotificationChannel(
+                channel
+            )
         }
     }
 
-    private fun createNotification(): Notification {
+    private fun createNotification():
+            Notification {
 
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        return if (
+            Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.O
+        ) {
 
             Notification.Builder(
                 this,
                 CHANNEL_ID
             )
-                .setContentTitle("Aviator AI")
-                .setContentText("Screen monitor is running")
+                .setContentTitle(
+                    "Aviator AI"
+                )
+                .setContentText(
+                    "Screen monitor is running"
+                )
                 .setSmallIcon(
                     android.R.drawable.ic_menu_view
                 )
@@ -135,8 +213,12 @@ class ScreenCaptureService : Service() {
 
             @Suppress("DEPRECATION")
             Notification.Builder(this)
-                .setContentTitle("Aviator AI")
-                .setContentText("Screen monitor is running")
+                .setContentTitle(
+                    "Aviator AI"
+                )
+                .setContentText(
+                    "Screen monitor is running"
+                )
                 .setSmallIcon(
                     android.R.drawable.ic_menu_view
                 )
@@ -148,17 +230,29 @@ class ScreenCaptureService : Service() {
     private fun startCapture() {
 
         val windowManager =
-            getSystemService(WINDOW_SERVICE)
-                    as WindowManager
+            getSystemService(
+                WINDOW_SERVICE
+            ) as WindowManager
 
-        val metrics = DisplayMetrics()
+        val metrics =
+            DisplayMetrics()
 
         @Suppress("DEPRECATION")
-        windowManager.defaultDisplay.getMetrics(metrics)
+        windowManager.defaultDisplay
+            .getMetrics(metrics)
 
-        val width = metrics.widthPixels
-        val height = metrics.heightPixels
-        val density = metrics.densityDpi
+        val width =
+            metrics.widthPixels
+
+        val height =
+            metrics.heightPixels
+
+        val density =
+            metrics.densityDpi
+
+        sendDiagnostic(
+            "Display: ${width}x${height}"
+        )
 
         imageReader =
             ImageReader.newInstance(
@@ -171,15 +265,24 @@ class ScreenCaptureService : Service() {
         imageReader?.setOnImageAvailableListener(
             { reader ->
 
+                frameCount++
+
                 val now =
                     System.currentTimeMillis()
 
-                if (now - lastProcessedTime < 250L) {
-                    reader.acquireLatestImage()?.close()
+                if (
+                    now - lastProcessedTime <
+                    500L
+                ) {
+
+                    reader.acquireLatestImage()
+                        ?.close()
+
                     return@setOnImageAvailableListener
                 }
 
-                lastProcessedTime = now
+                lastProcessedTime =
+                    now
 
                 val image =
                     reader.acquireLatestImage()
@@ -187,11 +290,17 @@ class ScreenCaptureService : Service() {
 
                 try {
 
-                    val imageWidth = image.width
-                    val imageHeight = image.height
+                    val imageWidth =
+                        image.width
 
-                    val plane = image.planes[0]
-                    val buffer = plane.buffer
+                    val imageHeight =
+                        image.height
+
+                    val plane =
+                        image.planes[0]
+
+                    val buffer =
+                        plane.buffer
 
                     val pixelStride =
                         plane.pixelStride
@@ -201,13 +310,13 @@ class ScreenCaptureService : Service() {
 
                     val rowPadding =
                         rowStride -
-                                pixelStride *
-                                imageWidth
+                            pixelStride *
+                            imageWidth
 
                     val bitmapWidth =
                         imageWidth +
-                                rowPadding /
-                                pixelStride
+                            rowPadding /
+                            pixelStride
 
                     val bitmap =
                         Bitmap.createBitmap(
@@ -217,13 +326,21 @@ class ScreenCaptureService : Service() {
                         )
 
                     buffer.rewind()
-                    bitmap.copyPixelsFromBuffer(buffer)
+
+                    bitmap.copyPixelsFromBuffer(
+                        buffer
+                    )
 
                     processFrame(bitmap)
 
                 } catch (_: Exception) {
-                    // Ignore damaged frames.
+
+                    sendDiagnostic(
+                        "ERROR processing screen frame"
+                    )
+
                 } finally {
+
                     image.close()
                 }
 
@@ -242,21 +359,32 @@ class ScreenCaptureService : Service() {
                 null,
                 null
             )
+
+        if (virtualDisplay != null) {
+
+            sendDiagnostic(
+                "Screen capture active"
+            )
+
+        } else {
+
+            sendDiagnostic(
+                "ERROR: VirtualDisplay failed"
+            )
+        }
     }
 
-    private fun processFrame(bitmap: Bitmap) {
-
-        /*
-         * Aviator's multiplier is in the central area.
-         * Crop the middle portion before OCR so that
-         * unrelated screen text does not confuse ML Kit.
-         */
+    private fun processFrame(
+        bitmap: Bitmap
+    ) {
 
         val cropWidth =
-            (bitmap.width * 0.70f).toInt()
+            (bitmap.width * 0.80f)
+                .toInt()
 
         val cropHeight =
-            (bitmap.height * 0.45f).toInt()
+            (bitmap.height * 0.60f)
+                .toInt()
 
         val cropLeft =
             ((bitmap.width - cropWidth) / 2)
@@ -276,13 +404,23 @@ class ScreenCaptureService : Service() {
                 bitmap.height - cropTop
             )
 
-        if (safeWidth <= 0 || safeHeight <= 0) {
+        if (
+            safeWidth <= 0 ||
+            safeHeight <= 0
+        ) {
+
             bitmap.recycle()
+
+            sendDiagnostic(
+                "ERROR: invalid OCR crop"
+            )
+
             return
         }
 
         val croppedBitmap =
             try {
+
                 Bitmap.createBitmap(
                     bitmap,
                     cropLeft,
@@ -290,14 +428,23 @@ class ScreenCaptureService : Service() {
                     safeWidth,
                     safeHeight
                 )
+
             } catch (_: Exception) {
+
                 bitmap.recycle()
+
+                sendDiagnostic(
+                    "ERROR: bitmap crop failed"
+                )
+
                 return
             }
 
-        if (croppedBitmap !== bitmap &&
+        if (
+            croppedBitmap !== bitmap &&
             !bitmap.isRecycled
         ) {
+
             bitmap.recycle()
         }
 
@@ -305,34 +452,61 @@ class ScreenCaptureService : Service() {
 
             val inputImage =
                 try {
+
                     InputImage.fromBitmap(
                         croppedBitmap,
                         0
                     )
+
                 } catch (_: Exception) {
-                    croppedBitmap.recycle()
+
+                    if (
+                        !croppedBitmap.isRecycled
+                    ) {
+                        croppedBitmap.recycle()
+                    }
+
                     return@execute
                 }
 
-            recognizer.process(inputImage)
+            recognizer.process(
+                inputImage
+            )
                 .addOnSuccessListener { result ->
 
                     try {
+
                         processOcrResult(
                             result,
                             croppedBitmap
                         )
+
                     } catch (_: Exception) {
-                        // Ignore OCR errors.
+
+                        sendDiagnostic(
+                            "ERROR processing OCR result"
+                        )
+
                     } finally {
-                        if (!croppedBitmap.isRecycled) {
+
+                        if (
+                            !croppedBitmap.isRecycled
+                        ) {
+
                             croppedBitmap.recycle()
                         }
                     }
                 }
                 .addOnFailureListener {
 
-                    if (!croppedBitmap.isRecycled) {
+                    sendDiagnostic(
+                        "OCR processing failed"
+                    )
+
+                    if (
+                        !croppedBitmap.isRecycled
+                    ) {
+
                         croppedBitmap.recycle()
                     }
                 }
@@ -340,57 +514,94 @@ class ScreenCaptureService : Service() {
     }
 
     private fun processOcrResult(
-        result: com.google.mlkit.vision.text.Text,
+        result: Text,
         bitmap: Bitmap
     ) {
 
-        /*
-         * Accept:
-         * 1.00x
-         * 1.00X
-         * 1.00×
-         * 1.00
-         * 1,00
-         */
+        val fullText =
+            result.text.trim()
+
+        val now =
+            System.currentTimeMillis()
+
+        if (
+            now - lastDiagnosticTime >
+            3000L
+        ) {
+
+            lastDiagnosticTime = now
+
+            if (fullText.isEmpty()) {
+
+                sendDiagnostic(
+                    "Frames received: $frameCount | OCR text: NONE"
+                )
+
+            } else {
+
+                val preview =
+                    fullText
+                        .replace(
+                            "\n",
+                            " "
+                        )
+                        .take(80)
+
+                sendDiagnostic(
+                    "OCR text: $preview"
+                )
+            }
+        }
 
         val pattern =
             Pattern.compile(
                 "(\\d+(?:[\\.,]\\d+)?)\\s*[×xX]?"
             )
 
-        var detectedValue: Double? = null
-        var detectedIsRed = false
+        var detectedValue:
+                Double? = null
 
-        for (block in result.textBlocks) {
+        var detectedIsRed =
+            false
 
-            for (line in block.lines) {
+        for (
+            block in result.textBlocks
+        ) {
 
-                for (element in line.elements) {
+            for (
+                line in block.lines
+            ) {
+
+                for (
+                    element in line.elements
+                ) {
 
                     val rawText =
                         element.text.trim()
 
                     val normalizedText =
-                        rawText
-                            .replace(',', '.')
+                        rawText.replace(
+                            ',',
+                            '.'
+                        )
 
                     val matcher =
                         pattern.matcher(
                             normalizedText
                         )
 
-                    if (!matcher.find()) {
+                    if (
+                        !matcher.find()
+                    ) {
                         continue
                     }
 
                     val value =
-                        matcher.group(1)
+                        matcher
+                            .group(1)
                             ?.toDoubleOrNull()
                             ?: continue
 
-                    /*
-                     * Multiplier validation.
-                     */
                     if (
                         value < 1.0 ||
                         value > 1000000.0
@@ -398,12 +609,15 @@ class ScreenCaptureService : Service() {
                         continue
                     }
 
-                    detectedValue = value
+                    detectedValue =
+                        value
 
                     val box =
                         element.boundingBox
 
-                    if (box != null) {
+                    if (
+                        box != null
+                    ) {
 
                         detectedIsRed =
                             containsRedPixels(
@@ -418,12 +632,16 @@ class ScreenCaptureService : Service() {
                     break
                 }
 
-                if (detectedValue != null) {
+                if (
+                    detectedValue != null
+                ) {
                     break
                 }
             }
 
-            if (detectedValue != null) {
+            if (
+                detectedValue != null
+            ) {
                 break
             }
         }
@@ -432,46 +650,39 @@ class ScreenCaptureService : Service() {
             detectedValue
                 ?: return
 
-        lastLiveMultiplier = value
+        lastLiveMultiplier =
+            value
 
         if (!detectedIsRed) {
 
-            /*
-             * White multiplier is still live.
-             */
-            whiteMultiplierSeen = true
+            whiteMultiplierSeen =
+                true
 
-            sendLiveMultiplier(value)
+            sendLiveMultiplier(
+                value
+            )
 
             return
         }
 
-        /*
-         * Red multiplier means the round has ended.
-         *
-         * We only accept it as a completed round if
-         * we previously saw a live multiplier.
-         */
         if (!whiteMultiplierSeen) {
             return
         }
 
-        /*
-         * Record the final red multiplier immediately.
-         * We deliberately do NOT require two red frames,
-         * because the red transition can happen in a blink.
-         */
-        if (lastRecordedMultiplier != value) {
+        if (
+            lastRecordedMultiplier != value
+        ) {
 
-            lastRecordedMultiplier = value
+            lastRecordedMultiplier =
+                value
 
-            recordCompletedRound(value)
+            recordCompletedRound(
+                value
+            )
         }
 
-        /*
-         * Prepare for the next round.
-         */
-        whiteMultiplierSeen = false
+        whiteMultiplierSeen =
+            false
     }
 
     private fun containsRedPixels(
@@ -506,21 +717,34 @@ class ScreenCaptureService : Service() {
                 bitmap.height
             )
 
-        var redPixels = 0
-        var sampledPixels = 0
+        var redPixels =
+            0
 
-        val step = 2
+        var sampledPixels =
+            0
 
-        var y = safeTop
+        val step =
+            2
 
-        while (y < safeBottom) {
+        var y =
+            safeTop
 
-            var x = safeLeft
+        while (
+            y < safeBottom
+        ) {
 
-            while (x < safeRight) {
+            var x =
+                safeLeft
+
+            while (
+                x < safeRight
+            ) {
 
                 val pixel =
-                    bitmap.getPixel(x, y)
+                    bitmap.getPixel(
+                        x,
+                        y
+                    )
 
                 val red =
                     Color.red(pixel)
@@ -536,6 +760,7 @@ class ScreenCaptureService : Service() {
                     red > green * 1.4 &&
                     red > blue * 1.4
                 ) {
+
                     redPixels++
                 }
 
@@ -547,13 +772,17 @@ class ScreenCaptureService : Service() {
             y += step
         }
 
-        if (sampledPixels == 0) {
+        if (
+            sampledPixels == 0
+        ) {
+
             return false
         }
 
-        return redPixels.toDouble() /
-                sampledPixels.toDouble() >=
-                0.08
+        return (
+            redPixels.toDouble() /
+                sampledPixels.toDouble()
+            ) >= 0.08
     }
 
     private fun sendLiveMultiplier(
@@ -562,7 +791,7 @@ class ScreenCaptureService : Service() {
 
         val updateIntent =
             Intent(
-                "com.example.aviatorai.MULTIPLIER_LIVE"
+                LIVE_MULTIPLIER_ACTION
             ).apply {
 
                 putExtra(
@@ -571,13 +800,15 @@ class ScreenCaptureService : Service() {
                 )
             }
 
-        sendBroadcast(updateIntent)
+        sendBroadcast(
+            updateIntent
+        )
 
         android.util.Log.d(
             "AviatorAI",
             String.format(
                 Locale.US,
-                "LIVE MULTIPLIER: %.2fx",
+                "LIVE MULTIPLIER: %.2f×",
                 value
             )
         )
@@ -589,7 +820,7 @@ class ScreenCaptureService : Service() {
 
         val updateIntent =
             Intent(
-                "com.example.aviatorai.ROUND_COMPLETED"
+                ROUND_COMPLETED_ACTION
             ).apply {
 
                 putExtra(
@@ -598,29 +829,61 @@ class ScreenCaptureService : Service() {
                 )
             }
 
-        sendBroadcast(updateIntent)
+        sendBroadcast(
+            updateIntent
+        )
 
         android.util.Log.d(
             "AviatorAI",
             String.format(
                 Locale.US,
-                "COMPLETED ROUND: %.2fx",
+                "COMPLETED ROUND: %.2f×",
                 value
             )
+        )
+    }
+
+    private fun sendDiagnostic(
+        message: String
+    ) {
+
+        val diagnosticIntent =
+            Intent(
+                DIAGNOSTIC_ACTION
+            ).apply {
+
+                putExtra(
+                    "message",
+                    message
+                )
+            }
+
+        sendBroadcast(
+            diagnosticIntent
+        )
+
+        android.util.Log.d(
+            "AviatorAI",
+            message
         )
     }
 
     override fun onDestroy() {
 
         virtualDisplay?.release()
+
         imageReader?.close()
+
         mediaProjection?.stop()
 
         recognizer.close()
+
         ocrExecutor.shutdown()
 
         virtualDisplay = null
+
         imageReader = null
+
         mediaProjection = null
 
         super.onDestroy()
@@ -629,6 +892,8 @@ class ScreenCaptureService : Service() {
     override fun onBind(
         intent: Intent?
     ): IBinder? {
+
         return null
     }
 }
+```
