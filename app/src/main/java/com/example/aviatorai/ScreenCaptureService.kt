@@ -1,4 +1,4 @@
-
+```kotlin
 package com.example.aviatorai
 
 import android.app.Notification
@@ -113,31 +113,25 @@ class ScreenCaptureService : Service() {
             intent?.getParcelableExtra<Intent>(
                 "data"
             )
-if (resultCode == -1 || data == null) {
 
-    val reason =
-        when {
-            intent == null ->
-                "ERROR: service received NULL intent"
+        if (resultCode == -1 || data == null) {
 
-            resultCode == -1 && data == null ->
-                "ERROR: resultCode AND data missing"
+            val reason =
+                when {
+                    intent == null ->
+                        "ERROR: service received NULL intent"
 
-            resultCode == -1 ->
-                "ERROR: resultCode missing"
+                    resultCode == -1 && data == null ->
+                        "ERROR: resultCode AND data missing"
 
-            else ->
-                "ERROR: data Intent missing"
-        }
+                    resultCode == -1 ->
+                        "ERROR: resultCode missing"
 
-    sendDiagnostic(reason)
+                    else ->
+                        "ERROR: data Intent missing"
+                }
 
-    return START_NOT_STICKY
-}
-
-            sendDiagnostic(
-                "ERROR: screen capture permission data missing"
-            )
+            sendDiagnostic(reason)
 
             return START_NOT_STICKY
         }
@@ -912,4 +906,4 @@ if (resultCode == -1 || data == null) {
         return null
     }
 }
-
+```
