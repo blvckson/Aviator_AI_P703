@@ -102,14 +102,15 @@ class ScreenCaptureService : Service() {
         sendDiagnostic(
             "Screen capture service started"
         )
-
+        if (intent == null) {
+            return START_NOT_STICKY
+        }
         val resultCode =
-            intent?.getIntExtra(
-                "resultCode",
-                -1
-            ) ?: -1
-
-        val data =
+    intent.getIntExtra(
+        "resultCode",
+        -1
+    )
+        val ddata =
             intent?.getParcelableExtra<Intent>(
                 "data"
             )
