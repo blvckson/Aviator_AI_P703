@@ -1,4 +1,4 @@
-```kotlin
+
 package com.example.aviatorai
 
 import android.app.Activity
@@ -240,4 +240,3 @@ class MainActivity : Activity() {
         }
     }
 }
-```
