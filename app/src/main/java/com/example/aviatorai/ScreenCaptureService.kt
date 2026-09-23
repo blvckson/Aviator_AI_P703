@@ -18,8 +18,8 @@ import android.os.IBinder
 import android.util.DisplayMetrics
 import android.view.WindowManager
 import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.Text
+import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.util.Locale
 import java.util.concurrent.Executors
@@ -29,31 +29,19 @@ class ScreenCaptureService : Service() {
 
 ```
 companion object {
-
-    private const val CHANNEL_ID =
-        "aviator_monitor"
-
-    private const val NOTIFICATION_ID =
-        1001
-
+    private const val CHANNEL_ID = "aviator_monitor"
+    private const val NOTIFICATION_ID = 1001
     private const val DIAGNOSTIC_ACTION =
         "com.example.aviatorai.DIAGNOSTIC"
-
     private const val LIVE_MULTIPLIER_ACTION =
         "com.example.aviatorai.MULTIPLIER_LIVE"
-
     private const val ROUND_COMPLETED_ACTION =
         "com.example.aviatorai.ROUND_COMPLETED"
 }
 
-private var mediaProjection:
-        MediaProjection? = null
-
-private var virtualDisplay:
-        VirtualDisplay? = null
-
-private var imageReader:
-        ImageReader? = null
+private var mediaProjection: MediaProjection? = null
+private var virtualDisplay: VirtualDisplay? = null
+private var imageReader: ImageReader? = null
 
 private val ocrExecutor =
     Executors.newSingleThreadExecutor()
@@ -64,21 +52,14 @@ private val recognizer =
     )
 
 private var lastProcessedTime = 0L
-
 private var lastDiagnosticTime = 0L
-
 private var frameCount = 0
 
-private var lastLiveMultiplier:
-        Double? = null
-
-private var lastRecordedMultiplier:
-        Double? = null
-
+private var lastLiveMultiplier: Double? = null
+private var lastRecordedMultiplier: Double? = null
 private var whiteMultiplierSeen = false
 
 override fun onCreate() {
-
     super.onCreate()
 
     createNotificationChannel()
@@ -104,6 +85,10 @@ override fun onStartCommand(
     )
 
     if (intent == null) {
+        sendDiagnostic(
+            "ERROR: service received NULL intent"
+        )
+
         return START_NOT_STICKY
     }
 
@@ -118,21 +103,29 @@ override fun onStartCommand(
             "data"
         )
 
-    if (resultCode == -1 || data == null) {
+    if (resultCode == -1 && data == null) {
 
-        val reason =
-            when {
-                resultCode == -1 && data == null ->
-                    "ERROR: resultCode AND data missing"
+        sendDiagnostic(
+            "ERROR: resultCode AND data missing"
+        )
 
-                resultCode == -1 ->
-                    "ERROR: resultCode missing"
+        return START_NOT_STICKY
+    }
 
-                else ->
-                    "ERROR: data Intent missing"
-            }
+    if (resultCode == -1) {
 
-        sendDiagnostic(reason)
+        sendDiagnostic(
+            "ERROR: resultCode missing"
+        )
+
+        return START_NOT_STICKY
+    }
+
+    if (data == null) {
+
+        sendDiagnostic(
+            "ERROR: data Intent missing"
+        )
 
         return START_NOT_STICKY
     }
@@ -161,7 +154,6 @@ override fun onStartCommand(
     }
 
     if (virtualDisplay == null) {
-
         startCapture()
     }
 
@@ -196,8 +188,7 @@ private fun createNotificationChannel() {
     }
 }
 
-private fun createNotification():
-        Notification {
+private fun createNotification(): Notification {
 
     return if (
         Build.VERSION.SDK_INT >=
@@ -250,7 +241,6 @@ private fun startCapture() {
         DisplayMetrics()
 
     @Suppress("DEPRECATION")
-
     windowManager.defaultDisplay
         .getMetrics(metrics)
 
@@ -392,12 +382,10 @@ private fun processFrame(
 ) {
 
     val cropWidth =
-        (bitmap.width * 0.80f)
-            .toInt()
+        (bitmap.width * 0.80f).toInt()
 
     val cropHeight =
-        (bitmap.height * 0.60f)
-            .toInt()
+        (bitmap.height * 0.60f).toInt()
 
     val cropLeft =
         ((bitmap.width - cropWidth) / 2)
@@ -505,7 +493,6 @@ private fun processFrame(
                     if (
                         !croppedBitmap.isRecycled
                     ) {
-
                         croppedBitmap.recycle()
                     }
                 }
@@ -519,7 +506,6 @@ private fun processFrame(
                 if (
                     !croppedBitmap.isRecycled
                 ) {
-
                     croppedBitmap.recycle()
                 }
             }
@@ -572,23 +558,14 @@ private fun processOcrResult(
             "(\\d+(?:[\\.,]\\d+)?)\\s*[×xX]?"
         )
 
-    var detectedValue:
-            Double? = null
+    var detectedValue: Double? = null
+    var detectedIsRed = false
 
-    var detectedIsRed =
-        false
+    for (block in result.textBlocks) {
 
-    for (
-        block in result.textBlocks
-    ) {
+        for (line in block.lines) {
 
-        for (
-            line in block.lines
-        ) {
-
-            for (
-                element in line.elements
-            ) {
+            for (element in line.elements) {
 
                 val rawText =
                     element.text.trim()
@@ -604,9 +581,7 @@ private fun processOcrResult(
                         normalizedText
                     )
 
-                if (
-                    !matcher.find()
-                ) {
+                if (!matcher.find()) {
                     continue
                 }
 
@@ -629,9 +604,7 @@ private fun processOcrResult(
                 val box =
                     element.boundingBox
 
-                if (
-                    box != null
-                ) {
+                if (box != null) {
 
                     detectedIsRed =
                         containsRedPixels(
@@ -661,8 +634,7 @@ private fun processOcrResult(
     }
 
     val value =
-        detectedValue
-            ?: return
+        detectedValue ?: return
 
     lastLiveMultiplier =
         value
@@ -731,28 +703,18 @@ private fun containsRedPixels(
             bitmap.height
         )
 
-    var redPixels =
-        0
+    var redPixels = 0
+    var sampledPixels = 0
 
-    var sampledPixels =
-        0
+    val step = 2
 
-    val step =
-        2
+    var y = safeTop
 
-    var y =
-        safeTop
+    while (y < safeBottom) {
 
-    while (
-        y < safeBottom
-    ) {
+        var x = safeLeft
 
-        var x =
-            safeLeft
-
-        while (
-            x < safeRight
-        ) {
+        while (x < safeRight) {
 
             val pixel =
                 bitmap.getPixel(
@@ -786,10 +748,7 @@ private fun containsRedPixels(
         y += step
     }
 
-    if (
-        sampledPixels == 0
-    ) {
-
+    if (sampledPixels == 0) {
         return false
     }
 
@@ -885,13 +844,9 @@ private fun sendDiagnostic(
 override fun onDestroy() {
 
     virtualDisplay?.release()
-
     imageReader?.close()
-
     mediaProjection?.stop()
-
     recognizer.close()
-
     ocrExecutor.shutdown()
 
     virtualDisplay = null
@@ -906,6 +861,7 @@ override fun onBind(
 ): IBinder? {
 
     return null
- } 
+}
+
 
 }
