@@ -207,13 +207,22 @@ class MainActivity : Activity() {
         )
 
         if (
-            requestCode ==
-                SCREEN_CAPTURE_REQUEST &&
-            resultCode ==
-                RESULT_OK &&
-            data != null
-        ) {
+        
+thankif (requestCode != SCREEN_CAPTURE_REQUEST) {
+    return
+}
 
+if (resultCode != RESULT_OK) {
+    statusText.text =
+        "ERROR: Android returned resultCode = $resultCode"
+    return
+}
+
+if (data == null) {
+    statusText.text =
+        "ERROR: Android returned NULL capture data"
+    return
+}
             val serviceIntent =
                 Intent(
                     this,
