@@ -206,9 +206,7 @@ class MainActivity : Activity() {
             data
         )
 
-        if (
-        
-thankif (requestCode != SCREEN_CAPTURE_REQUEST) {
+if (requestCode != SCREEN_CAPTURE_REQUEST) {
     return
 }
 
