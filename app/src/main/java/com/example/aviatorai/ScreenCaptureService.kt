@@ -1,4 +1,4 @@
-if com.example.aviatorai
+package com.example.aviatorai
 
 import android.app.Notification
 import android.app.NotificationChannel
