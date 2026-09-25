@@ -96,38 +96,37 @@ class ScreenCaptureService : Service() {
         }
 
         val resultCode =
-            val resultCode =
-        intent.getIntExtra(
-            "resultCode",
-            -1
-        )
-
-    val data =
-        intent.getParcelableExtra<Intent>(
-            "data"
-        )
-
-    sendDiagnostic(
-        "Received resultCode=$resultCode | data=${data != null}"
+    intent.getIntExtra(
+        "resultCode",
+        -1
     )
 
-    if (resultCode == -1) {
+val data =
+    intent.getParcelableExtra<Intent>(
+        "data"
+    )
 
-        sendDiagnostic(
-            "ERROR: invalid resultCode received"
-        )
+sendDiagnostic(
+    "Received resultCode=$resultCode | data=${data != null}"
+)
 
-        return START_NOT_STICKY
-    }
+if (resultCode == -1) {
 
-    if (data == null) {
+    sendDiagnostic(
+        "ERROR: invalid resultCode received"
+    )
 
-        sendDiagnostic(
-            "ERROR: capture data is NULL"
-        )
+    return START_NOT_STICKY
+}
 
-        return START_NOT_STICKY
-    }
+if (data == null) {
+
+    sendDiagnostic(
+        "ERROR: capture data is NULL"
+    )
+
+    return START_NOT_STICKY
+ }
 
         if (data == null) {
 
