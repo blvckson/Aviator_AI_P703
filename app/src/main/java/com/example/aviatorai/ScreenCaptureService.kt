@@ -1,10 +1,10 @@
+```kotlin
 package com.example.aviatorai
 
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
@@ -30,8 +30,11 @@ class ScreenCaptureService : Service() {
 
     companion object {
 
-        private const val CHANNEL_ID = "aviator_monitor"
-        private const val NOTIFICATION_ID = 1001
+        private const val CHANNEL_ID =
+            "aviator_monitor"
+
+        private const val NOTIFICATION_ID =
+            1001
 
         private const val ROUND_COMPLETED_ACTION =
             "com.example.aviatorai.ROUND_COMPLETED"
@@ -43,14 +46,22 @@ class ScreenCaptureService : Service() {
             "com.example.aviatorai.DIAGNOSTIC"
     }
 
-    private var mediaProjection: MediaProjection? = null
-    private var virtualDisplay: VirtualDisplay? = null
-    private var imageReader: ImageReader? = null
+    private var mediaProjection:
+        MediaProjection? = null
+
+    private var virtualDisplay:
+        VirtualDisplay? = null
+
+    private var imageReader:
+        ImageReader? = null
 
     private val mainHandler =
-        Handler(Looper.getMainLooper())
+        Handler(
+            Looper.getMainLooper()
+        )
 
-    private val ocrExecutor: ExecutorService =
+    private val ocrExecutor:
+        ExecutorService =
         Executors.newSingleThreadExecutor()
 
     private val textRecognizer =
@@ -58,17 +69,41 @@ class ScreenCaptureService : Service() {
             TextRecognizerOptions.DEFAULT_OPTIONS
         )
 
-    private var lastLiveMultiplier = -1.0
-    private var lastCompletedMultiplier = -1.0
+    private var lastLiveMultiplier =
+        -1.0
 
-    private var lastOcrTime = 0L
+    private var lastCompletedMultiplier =
+        -1.0
 
-    private val multiplierPattern =
+    private var lastOcrTime =
+        0L
+
+    /*
+     * Explicit multiplier:
+     *
+     * Examples:
+     * 1.25x
+     * 2.50x
+     * 10.30×
+     */
+    private val explicitMultiplierPattern =
         Pattern.compile(
-            "(\\d+(?:[\\.,]\\d+)?)\\s*[×xX]?"
+            "(\\d+(?:\\.\\d+)?)\\s*[xX]"
+        )
+
+    /*
+     * Decimal fallback:
+     *
+     * Used when OCR sees the number but misses
+     * the × or x character.
+     */
+    private val decimalPattern =
+        Pattern.compile(
+            "(?<!\\d)(\\d{1,7}\\.\\d{1,4})(?!\\d)"
         )
 
     override fun onCreate() {
+
         super.onCreate()
 
         createNotificationChannel()
@@ -103,16 +138,11 @@ class ScreenCaptureService : Service() {
         }
 
         /*
-         * IMPORTANT:
+         * RESULT_OK is -1.
          *
-         * Android RESULT_OK is -1.
-         *
-         * Therefore -1 is NOT a missing result code.
-         * The old code incorrectly treated -1 as missing.
-         *
-         * We first check whether the extra actually exists.
+         * We must check whether the extra exists
+         * before reading it.
          */
-
         if (!intent.hasExtra("resultCode")) {
 
             sendDiagnostic(
@@ -130,10 +160,14 @@ class ScreenCaptureService : Service() {
 
         val data =
             if (intent.hasExtra("data")) {
+
+                @Suppress("DEPRECATION")
                 intent.getParcelableExtra<Intent>(
                     "data"
                 )
+
             } else {
+
                 null
             }
 
@@ -142,10 +176,13 @@ class ScreenCaptureService : Service() {
         )
 
         /*
-         * RESULT_OK = -1.
+         * Android RESULT_OK = -1.
          */
-         
-        if (resultCode != android.app.Activity.RESULT_OK) {
+        if (
+            resultCode !=
+            android.app.Activity.RESULT_OK
+        ) {
+
             sendDiagnostic(
                 "ERROR: screen capture permission was not approved. resultCode=$resultCode"
             )
@@ -241,7 +278,10 @@ class ScreenCaptureService : Service() {
 
             imageReader?.setOnImageAvailableListener(
                 { reader ->
-                    processImage(reader)
+
+                    processImage(
+                        reader
+                    )
                 },
                 mainHandler
             )
@@ -287,22 +327,26 @@ class ScreenCaptureService : Service() {
             System.currentTimeMillis()
 
         /*
-         * Avoid processing every single frame.
+         * OCR approximately four times per second.
          */
-
         if (
             now - lastOcrTime <
             250L
         ) {
+
             return
         }
 
-        lastOcrTime = now
+        lastOcrTime =
+            now
 
         val image =
             try {
+
                 reader.acquireLatestImage()
-            } catch (e: Exception) {
+
+            } catch (_: Exception) {
+
                 null
             }
 
@@ -350,24 +394,39 @@ class ScreenCaptureService : Service() {
             )
 
             /*
-             * Aviator's multiplier is normally
-             * located around the central part
-             * of the game screen.
+             * Expanded OCR region.
+             *
+             * The previous version used:
+             * 80% width × 60% height.
+             *
+             * This version uses:
+             * 90% width × 80% height.
+             *
+             * This gives ML Kit more of the actual
+             * Aviator game screen to work with while
+             * still avoiding some outer UI elements.
              */
-
             val cropWidth =
-                (bitmap.width * 0.80f)
-                    .toInt()
+                (
+                    bitmap.width * 0.90f
+                ).toInt()
 
             val cropHeight =
-                (bitmap.height * 0.60f)
-                    .toInt()
+                (
+                    bitmap.height * 0.80f
+                ).toInt()
 
             val left =
-                (bitmap.width - cropWidth) / 2
+                (
+                    bitmap.width -
+                        cropWidth
+                ) / 2
 
             val top =
-                (bitmap.height - cropHeight) / 2
+                (
+                    bitmap.height -
+                        cropHeight
+                ) / 2
 
             val safeWidth =
                 cropWidth.coerceAtMost(
@@ -383,7 +442,9 @@ class ScreenCaptureService : Service() {
                 safeWidth <= 0 ||
                 safeHeight <= 0
             ) {
+
                 bitmap.recycle()
+
                 return
             }
 
@@ -425,31 +486,73 @@ class ScreenCaptureService : Service() {
             )
 
         textRecognizer
-            .process(inputImage)
+            .process(
+                inputImage
+            )
             .addOnSuccessListener { result ->
 
                 val text =
                     result.text
 
+                /*
+                 * IMPORTANT DIAGNOSTIC:
+                 *
+                 * Tell us exactly what ML Kit
+                 * thinks is on the screen.
+                 */
+                if (text.isBlank()) {
+
+                    sendDiagnostic(
+                        "OCR running: no text recognized"
+                    )
+
+                    bitmap.recycle()
+
+                    return@addOnSuccessListener
+                }
+
+                /*
+                 * Collapse line breaks so the diagnostic
+                 * fits on the status line.
+                 */
+                val diagnosticText =
+                    text
+                        .replace(
+                            "\n",
+                            " | "
+                        )
+                        .replace(
+                            "\r",
+                            " "
+                        )
+                        .trim()
+                        .take(180)
+
+                sendDiagnostic(
+                    "OCR text: $diagnosticText"
+                )
+
+                val multiplier =
+                    extractMultiplier(
+                        text
+                    )
+
                 if (
-                    text.isNotBlank()
+                    multiplier != null &&
+                    multiplier >= 1.0 &&
+                    multiplier <= 1000000.0
                 ) {
 
-                    val multiplier =
-                        extractMultiplier(
-                            text
-                        )
+                    handleMultiplier(
+                        multiplier,
+                        text
+                    )
 
-                    if (
-                        multiplier != null &&
-                        multiplier >= 1.0
-                    ) {
+                } else {
 
-                        handleMultiplier(
-                            multiplier,
-                            text
-                        )
-                    }
+                    sendDiagnostic(
+                        "OCR text found, but no valid multiplier"
+                    )
                 }
 
                 bitmap.recycle()
@@ -468,51 +571,136 @@ class ScreenCaptureService : Service() {
         text: String
     ): Double? {
 
+        /*
+         * Normalize common OCR mistakes.
+         *
+         * Examples:
+         *
+         * 1,O5  -> 1.05
+         * I.25  -> 1.25
+         * l.50  -> 1.50
+         * 2,35  -> 2.35
+         */
         val normalized =
             text
+                .replace(
+                    '×',
+                    'x'
+                )
                 .replace(
                     ',',
                     '.'
                 )
                 .replace(
-                    '×',
-                    'x'
+                    'O',
+                    '0'
+                )
+                .replace(
+                    'o',
+                    '0'
+                )
+                .replace(
+                    'I',
+                    '1'
+                )
+                .replace(
+                    'l',
+                    '1'
+                )
+                .replace(
+                    'S',
+                    '5'
+                )
+                .replace(
+                    's',
+                    '5'
                 )
 
-        val matcher =
-            multiplierPattern.matcher(
+        /*
+         * STEP 1:
+         *
+         * Look specifically for a multiplier followed
+         * by x.
+         */
+        val explicitMatcher =
+            explicitMultiplierPattern.matcher(
                 normalized
             )
 
-        var best: Double? = null
-
         while (
-            matcher.find()
+            explicitMatcher.find()
         ) {
 
             val raw =
-                matcher.group(1)
+                explicitMatcher.group(1)
                     ?: continue
 
             val value =
                 raw.toDoubleOrNull()
                     ?: continue
 
-            /*
-             * Ignore obviously unrelated
-             * numbers from the screen.
-             */
+            if (
+                value >= 1.0 &&
+                value <= 1000000.0
+            ) {
+
+                return value
+            }
+        }
+
+        /*
+         * STEP 2:
+         *
+         * OCR sometimes recognizes:
+         *
+         * 1.25
+         *
+         * but completely misses the ×.
+         *
+         * Therefore search decimal values too.
+         */
+        val decimalMatcher =
+            decimalPattern.matcher(
+                normalized
+            )
+
+        var best:
+            Double? =
+            null
+
+        while (
+            decimalMatcher.find()
+        ) {
+
+            val raw =
+                decimalMatcher.group(1)
+                    ?: continue
+
+            val value =
+                raw.toDoubleOrNull()
+                    ?: continue
 
             if (
                 value >= 1.0 &&
                 value <= 1000000.0
             ) {
 
+                /*
+                 * At this diagnostic stage we retain
+                 * the largest valid decimal candidate.
+                 *
+                 * Later validation will use screen
+                 * position, round state and historical
+                 * continuity so unrelated numbers are
+                 * rejected.
+                 */
                 if (
                     best == null ||
                     value > best!!
                 ) {
-                    best = value
+
+                    best =
+                        value
                 }
             }
         }
@@ -533,10 +721,11 @@ class ScreenCaptureService : Service() {
             )
 
         /*
-         * The live Aviator multiplier normally
-         * changes continuously.
+         * A live multiplier changes continuously.
+         *
+         * Only broadcast when the value changes
+         * sufficiently to avoid flooding the UI.
          */
-
         if (
             lastLiveMultiplier < 0.0 ||
             kotlin.math.abs(
@@ -553,12 +742,6 @@ class ScreenCaptureService : Service() {
             )
         }
 
-        /*
-         * Keep OCR text available for diagnostics.
-         * We do not assume that every OCR result
-         * represents the completed round.
-         */
-
         sendDiagnostic(
             "OCR detected ${rounded}×"
         )
@@ -568,173 +751,4 @@ class ScreenCaptureService : Service() {
         multiplier: Double
     ) {
 
-        val intent =
-            Intent(
-                LIVE_MULTIPLIER_ACTION
-            ).apply {
-
-                putExtra(
-                    "multiplier",
-                    multiplier
-                )
-            }
-
-        sendBroadcast(
-            intent
-        )
-    }
-
-    private fun sendCompletedMultiplier(
-        multiplier: Double
-    ) {
-
-        val intent =
-            Intent(
-                ROUND_COMPLETED_ACTION
-            ).apply {
-
-                putExtra(
-                    "multiplier",
-                    multiplier
-                )
-            }
-
-        sendBroadcast(
-            intent
-        )
-    }
-
-    private fun sendDiagnostic(
-        message: String
-    ) {
-
-        val intent =
-            Intent(
-                DIAGNOSTIC_ACTION
-            ).apply {
-
-                putExtra(
-                    "message",
-                    message
-                )
-            }
-
-        sendBroadcast(
-            intent
-        )
-    }
-
-    private fun createNotificationChannel() {
-
-        if (
-            Build.VERSION.SDK_INT >=
-            Build.VERSION_CODES.O
-        ) {
-
-            val channel =
-                NotificationChannel(
-                    CHANNEL_ID,
-                    "Aviator screen monitoring",
-                    NotificationManager.IMPORTANCE_LOW
-                )
-
-            val manager =
-                getSystemService(
-                    NotificationManager::class.java
-                )
-
-            manager.createNotificationChannel(
-                channel
-            )
-        }
-    }
-
-    private fun createNotification(): Notification {
-
-        return if (
-            Build.VERSION.SDK_INT >=
-            Build.VERSION_CODES.O
-        ) {
-
-            Notification.Builder(
-                this,
-                CHANNEL_ID
-            )
-                .setContentTitle(
-                    "Aviator AI"
-                )
-                .setContentText(
-                    "Reading the Aviator screen"
-                )
-                .setSmallIcon(
-                    android.R.drawable.ic_menu_view
-                )
-                .setOngoing(true)
-                .build()
-
-        } else {
-
-            @Suppress("DEPRECATION")
-            Notification.Builder(
-                this
-            )
-                .setContentTitle(
-                    "Aviator AI"
-                )
-                .setContentText(
-                    "Reading the Aviator screen"
-                )
-                .setSmallIcon(
-                    android.R.drawable.ic_menu_view
-                )
-                .setOngoing(true)
-                .build()
-        }
-    }
-
-    override fun onDestroy() {
-
-        sendDiagnostic(
-            "Screen monitor stopped"
-        )
-
-        try {
-            virtualDisplay?.release()
-        } catch (_: Exception) {
-        }
-
-        virtualDisplay =
-            null
-
-        try {
-            imageReader?.close()
-        } catch (_: Exception) {
-        }
-
-        imageReader =
-            null
-
-        try {
-            mediaProjection?.stop()
-        } catch (_: Exception) {
-        }
-
-        mediaProjection =
-            null
-
-        try {
-            textRecognizer.close()
-        } catch (_: Exception) {
-        }
-
-        ocrExecutor.shutdownNow()
-
-        super.onDestroy()
-    }
-
-    override fun onBind(
-        intent: Intent?
-    ): IBinder? {
-        return null
-    }
-}
+```
