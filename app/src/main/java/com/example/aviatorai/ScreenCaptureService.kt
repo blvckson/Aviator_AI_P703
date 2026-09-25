@@ -27,467 +27,479 @@ import java.util.regex.Pattern
 
 class ScreenCaptureService : Service() {
 
-companion object {
-    private const val CHANNEL_ID = "aviator_monitor"
-    private const val NOTIFICATION_ID = 1001
-    private const val DIAGNOSTIC_ACTION =
-        "com.example.aviatorai.DIAGNOSTIC"
-    private const val LIVE_MULTIPLIER_ACTION =
-        "com.example.aviatorai.MULTIPLIER_LIVE"
-    private const val ROUND_COMPLETED_ACTION =
-        "com.example.aviatorai.ROUND_COMPLETED"
-}
+    companion object {
+        private const val CHANNEL_ID = "aviator_monitor"
+        private const val NOTIFICATION_ID = 1001
 
-private var mediaProjection: MediaProjection? = null
-private var virtualDisplay: VirtualDisplay? = null
-private var imageReader: ImageReader? = null
+        private const val DIAGNOSTIC_ACTION =
+            "com.example.aviatorai.DIAGNOSTIC"
 
-private val ocrExecutor =
-    Executors.newSingleThreadExecutor()
+        private const val LIVE_MULTIPLIER_ACTION =
+            "com.example.aviatorai.MULTIPLIER_LIVE"
 
-private val recognizer =
-    TextRecognition.getClient(
-        TextRecognizerOptions.DEFAULT_OPTIONS
-    )
-
-private var lastProcessedTime = 0L
-private var lastDiagnosticTime = 0L
-private var frameCount = 0
-
-private var lastLiveMultiplier: Double? = null
-private var lastRecordedMultiplier: Double? = null
-private var whiteMultiplierSeen = false
-
-override fun onCreate() {
-    super.onCreate()
-
-    createNotificationChannel()
-
-    sendDiagnostic(
-        "Monitor service created"
-    )
-}
-
-override fun onStartCommand(
-    intent: Intent?,
-    flags: Int,
-    startId: Int
-): Int {
-
-    startForeground(
-        NOTIFICATION_ID,
-        createNotification()
-    )
-
-    sendDiagnostic(
-        "Screen capture service started"
-    )
-
-    if (intent == null) {
-        sendDiagnostic(
-            "ERROR: service received NULL intent"
-        )
-
-        return START_NOT_STICKY
+        private const val ROUND_COMPLETED_ACTION =
+            "com.example.aviatorai.ROUND_COMPLETED"
     }
 
-    val resultCode =
-        intent.getIntExtra(
-            "resultCode",
-            -1
+    private var mediaProjection: MediaProjection? = null
+    private var virtualDisplay: VirtualDisplay? = null
+    private var imageReader: ImageReader? = null
+
+    private val ocrExecutor =
+        Executors.newSingleThreadExecutor()
+
+    private val recognizer =
+        TextRecognition.getClient(
+            TextRecognizerOptions.DEFAULT_OPTIONS
         )
 
-    val data =
-        intent.getParcelableExtra<Intent>(
-            "data"
-        )
+    private var lastProcessedTime = 0L
+    private var lastDiagnosticTime = 0L
+    private var frameCount = 0
 
-    if (resultCode == -1 && data == null) {
+    private var lastLiveMultiplier: Double? = null
+    private var lastRecordedMultiplier: Double? = null
+    private var whiteMultiplierSeen = false
+
+    override fun onCreate() {
+        super.onCreate()
+
+        createNotificationChannel()
 
         sendDiagnostic(
-            "ERROR: resultCode AND data missing"
+            "Monitor service created"
         )
-
-        return START_NOT_STICKY
     }
 
-    if (resultCode == -1) {
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int
+    ): Int {
+
+        startForeground(
+            NOTIFICATION_ID,
+            createNotification()
+        )
 
         sendDiagnostic(
-            "ERROR: resultCode missing"
+            "Screen capture service started"
         )
 
-        return START_NOT_STICKY
-    }
+        if (intent == null) {
 
-    if (data == null) {
-
-        sendDiagnostic(
-            "ERROR: data Intent missing"
-        )
-
-        return START_NOT_STICKY
-    }
-
-    val projectionManager =
-        getSystemService(
-            MEDIA_PROJECTION_SERVICE
-        ) as MediaProjectionManager
-
-    if (mediaProjection == null) {
-
-        mediaProjection =
-            projectionManager.getMediaProjection(
-                resultCode,
-                data
-            )
-    }
-
-    if (mediaProjection == null) {
-
-        sendDiagnostic(
-            "ERROR: MediaProjection unavailable"
-        )
-
-        return START_NOT_STICKY
-    }
-
-    if (virtualDisplay == null) {
-        startCapture()
-    }
-
-    return START_STICKY
-}
-
-private fun createNotificationChannel() {
-
-    if (
-        Build.VERSION.SDK_INT >=
-        Build.VERSION_CODES.O
-    ) {
-
-        val channel =
-            NotificationChannel(
-                CHANNEL_ID,
-                "Aviator Screen Monitor",
-                NotificationManager.IMPORTANCE_LOW
+            sendDiagnostic(
+                "ERROR: service received NULL intent"
             )
 
-        channel.description =
-            "Aviator AI screen monitoring"
+            return START_NOT_STICKY
+        }
 
-        val manager =
+        val resultCode =
+            intent.getIntExtra(
+                "resultCode",
+                -1
+            )
+
+        val data =
+            intent.getParcelableExtra<Intent>(
+                "data"
+            )
+
+        sendDiagnostic(
+            "Received resultCode=$resultCode | data=${data != null}"
+        )
+
+        if (resultCode == -1) {
+
+            sendDiagnostic(
+                "ERROR: invalid resultCode received"
+            )
+
+            return START_NOT_STICKY
+        }
+
+        if (data == null) {
+
+            sendDiagnostic(
+                "ERROR: capture data is NULL"
+            )
+
+            return START_NOT_STICKY
+        }
+
+        val projectionManager =
             getSystemService(
-                NotificationManager::class.java
+                MEDIA_PROJECTION_SERVICE
+            ) as MediaProjectionManager
+
+        if (mediaProjection == null) {
+
+            mediaProjection =
+                projectionManager.getMediaProjection(
+                    resultCode,
+                    data
+                )
+        }
+
+        if (mediaProjection == null) {
+
+            sendDiagnostic(
+                "ERROR: MediaProjection unavailable"
             )
 
-        manager.createNotificationChannel(
-            channel
-        )
+            return START_NOT_STICKY
+        }
+
+        if (virtualDisplay == null) {
+            startCapture()
+        }
+
+        return START_STICKY
     }
-}
 
-private fun createNotification(): Notification {
+    private fun createNotificationChannel() {
 
-    return if (
-        Build.VERSION.SDK_INT >=
-        Build.VERSION_CODES.O
-    ) {
+        if (
+            Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.O
+        ) {
 
-        Notification.Builder(
-            this,
-            CHANNEL_ID
-        )
-            .setContentTitle(
-                "Aviator AI"
+            val channel =
+                NotificationChannel(
+                    CHANNEL_ID,
+                    "Aviator Screen Monitor",
+                    NotificationManager.IMPORTANCE_LOW
+                )
+
+            channel.description =
+                "Aviator AI screen monitoring"
+
+            val manager =
+                getSystemService(
+                    NotificationManager::class.java
+                )
+
+            manager.createNotificationChannel(
+                channel
             )
-            .setContentText(
-                "Screen monitor is running"
-            )
-            .setSmallIcon(
-                android.R.drawable.ic_menu_view
-            )
-            .setOngoing(true)
-            .build()
+        }
+    }
 
-    } else {
+    private fun createNotification(): Notification {
+
+        return if (
+            Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.O
+        ) {
+
+            Notification.Builder(
+                this,
+                CHANNEL_ID
+            )
+                .setContentTitle(
+                    "Aviator AI"
+                )
+                .setContentText(
+                    "Screen monitor is running"
+                )
+                .setSmallIcon(
+                    android.R.drawable.ic_menu_view
+                )
+                .setOngoing(true)
+                .build()
+
+        } else {
+
+            @Suppress("DEPRECATION")
+
+            Notification.Builder(this)
+                .setContentTitle(
+                    "Aviator AI"
+                )
+                .setContentText(
+                    "Screen monitor is running"
+                )
+                .setSmallIcon(
+                    android.R.drawable.ic_menu_view
+                )
+                .setOngoing(true)
+                .build()
+        }
+    }
+
+    private fun startCapture() {
+
+        val windowManager =
+            getSystemService(
+                WINDOW_SERVICE
+            ) as WindowManager
+
+        val metrics =
+            DisplayMetrics()
 
         @Suppress("DEPRECATION")
+        windowManager.defaultDisplay
+            .getMetrics(metrics)
 
-        Notification.Builder(this)
-            .setContentTitle(
-                "Aviator AI"
-            )
-            .setContentText(
-                "Screen monitor is running"
-            )
-            .setSmallIcon(
-                android.R.drawable.ic_menu_view
-            )
-            .setOngoing(true)
-            .build()
-    }
-}
+        val width =
+            metrics.widthPixels
 
-private fun startCapture() {
+        val height =
+            metrics.heightPixels
 
-    val windowManager =
-        getSystemService(
-            WINDOW_SERVICE
-        ) as WindowManager
+        val density =
+            metrics.densityDpi
 
-    val metrics =
-        DisplayMetrics()
-
-    @Suppress("DEPRECATION")
-    windowManager.defaultDisplay
-        .getMetrics(metrics)
-
-    val width =
-        metrics.widthPixels
-
-    val height =
-        metrics.heightPixels
-
-    val density =
-        metrics.densityDpi
-
-    sendDiagnostic(
-        "Display: ${width}x${height}"
-    )
-
-    imageReader =
-        ImageReader.newInstance(
-            width,
-            height,
-            PixelFormat.RGBA_8888,
-            2
+        sendDiagnostic(
+            "Display: ${width}x${height}"
         )
 
-    imageReader?.setOnImageAvailableListener(
-        { reader ->
+        imageReader =
+            ImageReader.newInstance(
+                width,
+                height,
+                PixelFormat.RGBA_8888,
+                2
+            )
 
-            frameCount++
+        imageReader?.setOnImageAvailableListener(
+            { reader ->
 
-            val now =
-                System.currentTimeMillis()
+                frameCount++
 
-            if (
-                now - lastProcessedTime <
-                500L
-            ) {
+                val now =
+                    System.currentTimeMillis()
 
-                reader.acquireLatestImage()
-                    ?.close()
+                if (
+                    now - lastProcessedTime <
+                    500L
+                ) {
 
-                return@setOnImageAvailableListener
-            }
+                    reader.acquireLatestImage()
+                        ?.close()
 
-            lastProcessedTime =
-                now
+                    return@setOnImageAvailableListener
+                }
 
-            val image =
-                reader.acquireLatestImage()
-                    ?: return@setOnImageAvailableListener
+                lastProcessedTime =
+                    now
 
-            try {
+                val image =
+                    reader.acquireLatestImage()
+                        ?: return@setOnImageAvailableListener
 
-                val imageWidth =
-                    image.width
+                try {
 
-                val imageHeight =
-                    image.height
+                    val imageWidth =
+                        image.width
 
-                val plane =
-                    image.planes[0]
+                    val imageHeight =
+                        image.height
 
-                val buffer =
-                    plane.buffer
+                    val plane =
+                        image.planes[0]
 
-                val pixelStride =
-                    plane.pixelStride
+                    val buffer =
+                        plane.buffer
 
-                val rowStride =
-                    plane.rowStride
+                    val pixelStride =
+                        plane.pixelStride
 
-                val rowPadding =
-                    rowStride -
-                        pixelStride *
-                        imageWidth
+                    val rowStride =
+                        plane.rowStride
 
-                val bitmapWidth =
-                    imageWidth +
-                        rowPadding /
-                        pixelStride
+                    val rowPadding =
+                        rowStride -
+                            pixelStride *
+                            imageWidth
 
-                val bitmap =
-                    Bitmap.createBitmap(
-                        bitmapWidth,
-                        imageHeight,
-                        Bitmap.Config.ARGB_8888
+                    val bitmapWidth =
+                        imageWidth +
+                            rowPadding /
+                            pixelStride
+
+                    val bitmap =
+                        Bitmap.createBitmap(
+                            bitmapWidth,
+                            imageHeight,
+                            Bitmap.Config.ARGB_8888
+                        )
+
+                    buffer.rewind()
+
+                    bitmap.copyPixelsFromBuffer(
+                        buffer
                     )
 
-                buffer.rewind()
+                    processFrame(bitmap)
 
-                bitmap.copyPixelsFromBuffer(
-                    buffer
-                )
+                } catch (_: Exception) {
 
-                processFrame(bitmap)
+                    sendDiagnostic(
+                        "ERROR processing screen frame"
+                    )
 
-            } catch (_: Exception) {
+                } finally {
 
-                sendDiagnostic(
-                    "ERROR processing screen frame"
-                )
+                    image.close()
+                }
 
-            } finally {
-
-                image.close()
-            }
-
-        },
-        null
-    )
-
-    virtualDisplay =
-        mediaProjection?.createVirtualDisplay(
-            "AviatorAIScreenMonitor",
-            width,
-            height,
-            density,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            imageReader?.surface,
-            null,
+            },
             null
         )
 
-    if (virtualDisplay != null) {
-
-        sendDiagnostic(
-            "Screen capture active"
-        )
-
-    } else {
-
-        sendDiagnostic(
-            "ERROR: VirtualDisplay failed"
-        )
-    }
-}
-
-private fun processFrame(
-    bitmap: Bitmap
-) {
-
-    val cropWidth =
-        (bitmap.width * 0.80f).toInt()
-
-    val cropHeight =
-        (bitmap.height * 0.60f).toInt()
-
-    val cropLeft =
-        ((bitmap.width - cropWidth) / 2)
-            .coerceAtLeast(0)
-
-    val cropTop =
-        ((bitmap.height - cropHeight) / 2)
-            .coerceAtLeast(0)
-
-    val safeWidth =
-        cropWidth.coerceAtMost(
-            bitmap.width - cropLeft
-        )
-
-    val safeHeight =
-        cropHeight.coerceAtMost(
-            bitmap.height - cropTop
-        )
-
-    if (
-        safeWidth <= 0 ||
-        safeHeight <= 0
-    ) {
-
-        bitmap.recycle()
-
-        sendDiagnostic(
-            "ERROR: invalid OCR crop"
-        )
-
-        return
-    }
-
-    val croppedBitmap =
-        try {
-
-            Bitmap.createBitmap(
-                bitmap,
-                cropLeft,
-                cropTop,
-                safeWidth,
-                safeHeight
+        virtualDisplay =
+            mediaProjection?.createVirtualDisplay(
+                "AviatorAIScreenMonitor",
+                width,
+                height,
+                density,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                imageReader?.surface,
+                null,
+                null
             )
 
-        } catch (_: Exception) {
+        if (virtualDisplay != null) {
+
+            sendDiagnostic(
+                "Screen capture active"
+            )
+
+        } else {
+
+            sendDiagnostic(
+                "ERROR: VirtualDisplay failed"
+            )
+        }
+    }
+
+    private fun processFrame(
+        bitmap: Bitmap
+    ) {
+
+        val cropWidth =
+            (bitmap.width * 0.80f).toInt()
+
+        val cropHeight =
+            (bitmap.height * 0.60f).toInt()
+
+        val cropLeft =
+            ((bitmap.width - cropWidth) / 2)
+                .coerceAtLeast(0)
+
+        val cropTop =
+            ((bitmap.height - cropHeight) / 2)
+                .coerceAtLeast(0)
+
+        val safeWidth =
+            cropWidth.coerceAtMost(
+                bitmap.width - cropLeft
+            )
+
+        val safeHeight =
+            cropHeight.coerceAtMost(
+                bitmap.height - cropTop
+            )
+
+        if (
+            safeWidth <= 0 ||
+            safeHeight <= 0
+        ) {
 
             bitmap.recycle()
 
             sendDiagnostic(
-                "ERROR: bitmap crop failed"
+                "ERROR: invalid OCR crop"
             )
 
             return
         }
 
-    if (
-        croppedBitmap !== bitmap &&
-        !bitmap.isRecycled
-    ) {
-
-        bitmap.recycle()
-    }
-
-    ocrExecutor.execute {
-
-        val inputImage =
+        val croppedBitmap =
             try {
 
-                InputImage.fromBitmap(
-                    croppedBitmap,
-                    0
+                Bitmap.createBitmap(
+                    bitmap,
+                    cropLeft,
+                    cropTop,
+                    safeWidth,
+                    safeHeight
                 )
 
             } catch (_: Exception) {
 
-                if (
-                    !croppedBitmap.isRecycled
-                ) {
-                    croppedBitmap.recycle()
-                }
+                bitmap.recycle()
 
-                return@execute
+                sendDiagnostic(
+                    "ERROR: bitmap crop failed"
+                )
+
+                return
             }
 
-        recognizer.process(
-            inputImage
-        )
-            .addOnSuccessListener { result ->
+        if (
+            croppedBitmap !== bitmap &&
+            !bitmap.isRecycled
+        ) {
 
+            bitmap.recycle()
+        }
+
+        ocrExecutor.execute {
+
+            val inputImage =
                 try {
 
-                    processOcrResult(
-                        result,
-                        croppedBitmap
+                    InputImage.fromBitmap(
+                        croppedBitmap,
+                        0
                     )
 
                 } catch (_: Exception) {
 
-                    sendDiagnostic(
-                        "ERROR processing OCR result"
-                    )
+                    if (
+                        !croppedBitmap.isRecycled
+                    ) {
+                        croppedBitmap.recycle()
+                    }
 
-                } finally {
+                    return@execute
+                }
+
+            recognizer.process(
+                inputImage
+            )
+                .addOnSuccessListener { result ->
+
+                    try {
+
+                        processOcrResult(
+                            result,
+                            croppedBitmap
+                        )
+
+                    } catch (_: Exception) {
+
+                        sendDiagnostic(
+                            "ERROR processing OCR result"
+                        )
+
+                    } finally {
+
+                        if (
+                            !croppedBitmap.isRecycled
+                        ) {
+                            croppedBitmap.recycle()
+                        }
+                    }
+                }
+                .addOnFailureListener {
+
+                    sendDiagnostic(
+                        "OCR processing failed"
+                    )
 
                     if (
                         !croppedBitmap.isRecycled
@@ -495,127 +507,121 @@ private fun processFrame(
                         croppedBitmap.recycle()
                     }
                 }
-            }
-            .addOnFailureListener {
-
-                sendDiagnostic(
-                    "OCR processing failed"
-                )
-
-                if (
-                    !croppedBitmap.isRecycled
-                ) {
-                    croppedBitmap.recycle()
-                }
-            }
-    }
-}
-
-private fun processOcrResult(
-    result: Text,
-    bitmap: Bitmap
-) {
-
-    val fullText =
-        result.text.trim()
-
-    val now =
-        System.currentTimeMillis()
-
-    if (
-        now - lastDiagnosticTime >
-        3000L
-    ) {
-
-        lastDiagnosticTime =
-            now
-
-        if (fullText.isEmpty()) {
-
-            sendDiagnostic(
-                "Frames received: $frameCount | OCR text: NONE"
-            )
-
-        } else {
-
-            val preview =
-                fullText
-                    .replace(
-                        "\n",
-                        " "
-                    )
-                    .take(80)
-
-            sendDiagnostic(
-                "OCR text: $preview"
-            )
         }
     }
 
-    val pattern =
-        Pattern.compile(
-            "(\\d+(?:[\\.,]\\d+)?)\\s*[×xX]?"
-        )
+    private fun processOcrResult(
+        result: Text,
+        bitmap: Bitmap
+    ) {
 
-    var detectedValue: Double? = null
-    var detectedIsRed = false
+        val fullText =
+            result.text.trim()
 
-    for (block in result.textBlocks) {
+        val now =
+            System.currentTimeMillis()
 
-        for (line in block.lines) {
+        if (
+            now - lastDiagnosticTime >
+            3000L
+        ) {
 
-            for (element in line.elements) {
+            lastDiagnosticTime =
+                now
 
-                val rawText =
-                    element.text.trim()
+            if (fullText.isEmpty()) {
 
-                val normalizedText =
-                    rawText.replace(
-                        ',',
-                        '.'
-                    )
+                sendDiagnostic(
+                    "Frames received: $frameCount | OCR text: NONE"
+                )
 
-                val matcher =
-                    pattern.matcher(
-                        normalizedText
-                    )
+            } else {
 
-                if (!matcher.find()) {
-                    continue
+                val preview =
+                    fullText
+                        .replace(
+                            "\n",
+                            " "
+                        )
+                        .take(80)
+
+                sendDiagnostic(
+                    "OCR text: $preview"
+                )
+            }
+        }
+
+        val pattern =
+            Pattern.compile(
+                "(\\d+(?:[\\.,]\\d+)?)\\s*[×xX]?"
+            )
+
+        var detectedValue: Double? = null
+        var detectedIsRed = false
+
+        for (block in result.textBlocks) {
+
+            for (line in block.lines) {
+
+                for (element in line.elements) {
+
+                    val rawText =
+                        element.text.trim()
+
+                    val normalizedText =
+                        rawText.replace(
+                            ',',
+                            '.'
+                        )
+
+                    val matcher =
+                        pattern.matcher(
+                            normalizedText
+                        )
+
+                    if (!matcher.find()) {
+                        continue
+                    }
+
+                    val value =
+                        matcher
+                            .group(1)
+                            ?.toDoubleOrNull()
+                            ?: continue
+
+                    if (
+                        value < 1.0 ||
+                        value > 1000000.0
+                    ) {
+                        continue
+                    }
+
+                    detectedValue =
+                        value
+
+                    val box =
+                        element.boundingBox
+
+                    if (box != null) {
+
+                        detectedIsRed =
+                            containsRedPixels(
+                                bitmap,
+                                box.left,
+                                box.top,
+                                box.right,
+                                box.bottom
+                            )
+                    }
+
+                    break
                 }
-
-                val value =
-                    matcher
-                        .group(1)
-                        ?.toDoubleOrNull()
-                        ?: continue
 
                 if (
-                    value < 1.0 ||
-                    value > 1000000.0
+                    detectedValue != null
                 ) {
-                    continue
+                    break
                 }
-
-                detectedValue =
-                    value
-
-                val box =
-                    element.boundingBox
-
-                if (box != null) {
-
-                    detectedIsRed =
-                        containsRedPixels(
-                            bitmap,
-                            box.left,
-                            box.top,
-                            box.right,
-                            box.bottom
-                        )
-                }
-
-                break
             }
 
             if (
@@ -625,242 +631,233 @@ private fun processOcrResult(
             }
         }
 
-        if (
-            detectedValue != null
-        ) {
-            break
+        val value =
+            detectedValue ?: return
+
+        lastLiveMultiplier =
+            value
+
+        if (!detectedIsRed) {
+
+            whiteMultiplierSeen =
+                true
+
+            sendLiveMultiplier(
+                value
+            )
+
+            return
         }
-    }
 
-    val value =
-        detectedValue ?: return
+        if (!whiteMultiplierSeen) {
+            return
+        }
 
-    lastLiveMultiplier =
-        value
+        if (
+            lastRecordedMultiplier != value
+        ) {
 
-    if (!detectedIsRed) {
+            lastRecordedMultiplier =
+                value
+
+            recordCompletedRound(
+                value
+            )
+        }
 
         whiteMultiplierSeen =
-            true
-
-        sendLiveMultiplier(
-            value
-        )
-
-        return
+            false
     }
 
-    if (!whiteMultiplierSeen) {
-        return
-    }
+    private fun containsRedPixels(
+        bitmap: Bitmap,
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int
+    ): Boolean {
 
-    if (
-        lastRecordedMultiplier != value
-    ) {
+        val safeLeft =
+            left.coerceIn(
+                0,
+                bitmap.width - 1
+            )
 
-        lastRecordedMultiplier =
-            value
+        val safeTop =
+            top.coerceIn(
+                0,
+                bitmap.height - 1
+            )
 
-        recordCompletedRound(
-            value
-        )
-    }
+        val safeRight =
+            right.coerceIn(
+                safeLeft + 1,
+                bitmap.width
+            )
 
-    whiteMultiplierSeen =
-        false
-}
+        val safeBottom =
+            bottom.coerceIn(
+                safeTop + 1,
+                bitmap.height
+            )
 
-private fun containsRedPixels(
-    bitmap: Bitmap,
-    left: Int,
-    top: Int,
-    right: Int,
-    bottom: Int
-): Boolean {
+        var redPixels = 0
+        var sampledPixels = 0
 
-    val safeLeft =
-        left.coerceIn(
-            0,
-            bitmap.width - 1
-        )
+        val step = 2
 
-    val safeTop =
-        top.coerceIn(
-            0,
-            bitmap.height - 1
-        )
+        var y = safeTop
 
-    val safeRight =
-        right.coerceIn(
-            safeLeft + 1,
-            bitmap.width
-        )
+        while (y < safeBottom) {
 
-    val safeBottom =
-        bottom.coerceIn(
-            safeTop + 1,
-            bitmap.height
-        )
+            var x = safeLeft
 
-    var redPixels = 0
-    var sampledPixels = 0
+            while (x < safeRight) {
 
-    val step = 2
+                val pixel =
+                    bitmap.getPixel(
+                        x,
+                        y
+                    )
 
-    var y = safeTop
+                val red =
+                    Color.red(pixel)
 
-    while (y < safeBottom) {
+                val green =
+                    Color.green(pixel)
 
-        var x = safeLeft
+                val blue =
+                    Color.blue(pixel)
 
-        while (x < safeRight) {
+                if (
+                    red > 150 &&
+                    red > green * 1.4 &&
+                    red > blue * 1.4
+                ) {
 
-            val pixel =
-                bitmap.getPixel(
-                    x,
-                    y
-                )
+                    redPixels++
+                }
 
-            val red =
-                Color.red(pixel)
+                sampledPixels++
 
-            val green =
-                Color.green(pixel)
-
-            val blue =
-                Color.blue(pixel)
-
-            if (
-                red > 150 &&
-                red > green * 1.4 &&
-                red > blue * 1.4
-            ) {
-
-                redPixels++
+                x += step
             }
 
-            sampledPixels++
-
-            x += step
+            y += step
         }
 
-        y += step
+        if (sampledPixels == 0) {
+            return false
+        }
+
+        return (
+            redPixels.toDouble() /
+                sampledPixels.toDouble()
+            ) >= 0.08
     }
 
-    if (sampledPixels == 0) {
-        return false
+    private fun sendLiveMultiplier(
+        value: Double
+    ) {
+
+        val updateIntent =
+            Intent(
+                LIVE_MULTIPLIER_ACTION
+            ).apply {
+
+                putExtra(
+                    "multiplier",
+                    value
+                )
+            }
+
+        sendBroadcast(
+            updateIntent
+        )
+
+        android.util.Log.d(
+            "AviatorAI",
+            String.format(
+                Locale.US,
+                "LIVE MULTIPLIER: %.2f×",
+                value
+            )
+        )
     }
 
-    return (
-        redPixels.toDouble() /
-            sampledPixels.toDouble()
-        ) >= 0.08
-}
+    private fun recordCompletedRound(
+        value: Double
+    ) {
 
-private fun sendLiveMultiplier(
-    value: Double
-) {
+        val updateIntent =
+            Intent(
+                ROUND_COMPLETED_ACTION
+            ).apply {
 
-    val updateIntent =
-        Intent(
-            LIVE_MULTIPLIER_ACTION
-        ).apply {
+                putExtra(
+                    "multiplier",
+                    value
+                )
+            }
 
-            putExtra(
-                "multiplier",
+        sendBroadcast(
+            updateIntent
+        )
+
+        android.util.Log.d(
+            "AviatorAI",
+            String.format(
+                Locale.US,
+                "COMPLETED ROUND: %.2f×",
                 value
             )
-        }
-
-    sendBroadcast(
-        updateIntent
-    )
-
-    android.util.Log.d(
-        "AviatorAI",
-        String.format(
-            Locale.US,
-            "LIVE MULTIPLIER: %.2f×",
-            value
         )
-    )
-}
+    }
 
-private fun recordCompletedRound(
-    value: Double
-) {
+    private fun sendDiagnostic(
+        message: String
+    ) {
 
-    val updateIntent =
-        Intent(
-            ROUND_COMPLETED_ACTION
-        ).apply {
+        val diagnosticIntent =
+            Intent(
+                DIAGNOSTIC_ACTION
+            ).apply {
 
-            putExtra(
-                "multiplier",
-                value
-            )
-        }
+                putExtra(
+                    "message",
+                    message
+                )
+            }
 
-    sendBroadcast(
-        updateIntent
-    )
-
-    android.util.Log.d(
-        "AviatorAI",
-        String.format(
-            Locale.US,
-            "COMPLETED ROUND: %.2f×",
-            value
+        sendBroadcast(
+            diagnosticIntent
         )
-    )
-}
 
-private fun sendDiagnostic(
-    message: String
-) {
+        android.util.Log.d(
+            "AviatorAI",
+            message
+        )
+    }
 
-    val diagnosticIntent =
-        Intent(
-            DIAGNOSTIC_ACTION
-        ).apply {
+    override fun onDestroy() {
 
-            putExtra(
-                "message",
-                message
-            )
-        }
+        virtualDisplay?.release()
+        imageReader?.close()
+        mediaProjection?.stop()
+        recognizer.close()
+        ocrExecutor.shutdown()
 
-    sendBroadcast(
-        diagnosticIntent
-    )
+        virtualDisplay = null
+        imageReader = null
+        mediaProjection = null
 
-    android.util.Log.d(
-        "AviatorAI",
-        message
-    )
-}
+        super.onDestroy()
+    }
 
-override fun onDestroy() {
+    override fun onBind(
+        intent: Intent?
+    ): IBinder? {
 
-    virtualDisplay?.release()
-    imageReader?.close()
-    mediaProjection?.stop()
-    recognizer.close()
-    ocrExecutor.shutdown()
-
-    virtualDisplay = null
-    imageReader = null
-    mediaProjection = null
-
-    super.onDestroy()
-}
-
-override fun onBind(
-    intent: Intent?
-): IBinder? {
-
-    return null
-}
-
-
+        return null
+    }
 }
