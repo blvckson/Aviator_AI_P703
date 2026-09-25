@@ -1,4 +1,3 @@
-
 package com.example.aviatorai
 
 import android.app.Activity
@@ -206,44 +205,48 @@ class MainActivity : Activity() {
             data
         )
 
-if (requestCode != SCREEN_CAPTURE_REQUEST) {
-    return
-}
+        if (requestCode != SCREEN_CAPTURE_REQUEST) {
+            return
+        }
 
-if (resultCode != RESULT_OK) {
-    statusText.text =
-        "ERROR: Android returned resultCode = $resultCode"
-    return
-}
-
-if (data == null) {
-    statusText.text =
-        "ERROR: Android returned NULL capture data"
-    return
-}
-            val serviceIntent =
-                Intent(
-                    this,
-                    ScreenCaptureService::class.java
-                ).apply {
-
-                    putExtra(
-                        "resultCode",
-                        resultCode
-                    )
-
-                    putExtra(
-                        "data",
-                        data
-                    )
-                }
-
-            startService(
-                serviceIntent
-            )
+        if (resultCode != RESULT_OK) {
 
             statusText.text =
-                "Screen monitor running"
+                "ERROR: Android returned resultCode = $resultCode"
+
+            return
         }
+
+        if (data == null) {
+
+            statusText.text =
+                "ERROR: Android returned NULL capture data"
+
+            return
+        }
+
+        val serviceIntent =
+            Intent(
+                this,
+                ScreenCaptureService::class.java
+            ).apply {
+
+                putExtra(
+                    "resultCode",
+                    resultCode
+                )
+
+                putExtra(
+                    "data",
+                    data
+                )
+            }
+
+        startService(
+            serviceIntent
+        )
+
+        statusText.text =
+            "Screen monitor running"
     }
 }
