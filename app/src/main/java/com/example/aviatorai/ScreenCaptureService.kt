@@ -1,4 +1,4 @@
-package com.example.aviatorai
+if com.example.aviatorai
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -144,9 +144,8 @@ class ScreenCaptureService : Service() {
         /*
          * RESULT_OK = -1.
          */
-
-        if (resultCode != RESULT_OK) {
-
+         
+        if (resultCode != android.app.Activity.RESULT_OK) {
             sendDiagnostic(
                 "ERROR: screen capture permission was not approved. resultCode=$resultCode"
             )
