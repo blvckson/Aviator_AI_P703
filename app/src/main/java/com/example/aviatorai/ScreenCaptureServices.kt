@@ -81,6 +81,26 @@ class ScreenCaptureService : Service() {
     private var lastDiagnosticTime =
         0L
 
+    /*
+     * Detection validation state.
+     *
+     * OCR can briefly produce incorrect values while the
+     * multiplier is moving. These variables require a
+     * candidate value to be seen consistently before it
+     * is accepted.
+     */
+    private var pendingMultiplier =
+        Double.NaN
+
+    private var pendingCount =
+        0
+
+    private var lastAcceptedTime =
+        0L
+
+    private val recognizerLock =
+        Any()
+
     override fun onCreate() {
         super.onCreate()
 
@@ -317,7 +337,7 @@ class ScreenCaptureService : Service() {
 
                 if (multiplier != null) {
 
-                    handleMultiplier(
+                    validateMultiplier(
                         multiplier
                     )
                 }
@@ -330,6 +350,20 @@ class ScreenCaptureService : Service() {
             }
     }
 
+    /*
+     * Improved multiplier extraction.
+     *
+     * OCR frequently changes characters such as:
+     *
+     *  x -> ×
+     *  O -> 0
+     *  l -> 1
+     *  I -> 1
+     *  , -> .
+     *
+     * The function also searches line-by-line and accepts
+     * common OCR spacing around the multiplier symbol.
+     */
     private fun extractMultiplier(
         text: String
     ): Double? {
@@ -338,31 +372,161 @@ class ScreenCaptureService : Service() {
             return null
         }
 
+        /*
+         * Normalize only characters that commonly cause
+         * OCR problems. We deliberately do not convert
+         * arbitrary letters into numbers.
+         */
+        val normalized =
+            text
+                .replace('×', 'x')
+                .replace('X', 'x')
+                .replace('O', '0')
+                .replace('o', '0')
+                .replace('I', '1')
+                .replace('l', '1')
+                .replace('L', '1')
+                .replace(',', '.')
+
+        /*
+         * Supported examples:
+         *
+         * 1.25x
+         * 1.25 x
+         * 1.25×
+         * 2x
+         * 10.50x
+         */
         val pattern =
             Regex(
-                """(?i)(\d+(?:[.,]\d+)?)\s*[x×]"""
+                """(?<![\d.])(\d{1,5}(?:\.\d{1,4})?)\s*x\b"""
             )
 
-        var result: Double? = null
+        val candidates =
+            mutableListOf<Double>()
 
-        for (match in pattern.findAll(text)) {
+        for (match in pattern.findAll(normalized)) {
 
-            val number =
+            val raw =
                 match.groupValues[1]
-                    .replace(",", ".")
-                    .toDoubleOrNull()
 
-            if (
-                number != null &&
-                number >= 1.0 &&
-                number <= 10000.0
-            ) {
+            val value =
+                raw.toDoubleOrNull()
 
-                result = number
+            if (value != null) {
+
+                /*
+                 * Valid Aviator multiplier range.
+                 *
+                 * Values below 1.00x or extremely large
+                 * OCR numbers are rejected.
+                 */
+                if (
+                    value >= 1.00 &&
+                    value <= 10000.0
+                ) {
+
+                    candidates.add(
+                        value
+                    )
+                }
             }
         }
 
-        return result
+        /*
+         * If several multiplier-looking values are present,
+         * choose the last valid one. This is useful because
+         * game screens may contain older/history values as
+         * well as the current multiplier.
+         */
+        return candidates.lastOrNull()
+    }
+
+    /*
+     * Validates an OCR candidate before it reaches
+     * handleMultiplier().
+     *
+     * A candidate must normally be detected more than once
+     * before acceptance. This helps reject one-frame OCR
+     * errors such as 8.25x being incorrectly read from
+     * unrelated screen text.
+     */
+    private fun validateMultiplier(
+        multiplier: Double
+    ) {
+
+        if (
+            multiplier < 1.00 ||
+            multiplier > 10000.0
+        ) {
+            return
+        }
+
+        /*
+         * Ignore impossible numeric values caused by
+         * floating-point noise.
+         */
+        if (!multiplier.isFinite()) {
+            return
+        }
+
+        /*
+         * If the candidate is effectively the same as the
+         * previous pending candidate, increase its count.
+         */
+        if (
+            !pendingMultiplier.isNaN() &&
+            abs(
+                multiplier -
+                    pendingMultiplier
+            ) <= 0.01
+        ) {
+
+            pendingCount++
+
+        } else {
+
+            /*
+             * New candidate.
+             */
+            pendingMultiplier =
+                multiplier
+
+            pendingCount = 1
+        }
+
+        /*
+         * Accept immediately when the value has been
+         * consistently detected.
+         *
+         * The 0.01 tolerance accommodates tiny OCR changes
+         * such as 1.24 -> 1.25.
+         */
+        if (pendingCount >= 2) {
+
+            val now =
+                System.currentTimeMillis()
+
+            /*
+             * Prevent the same OCR candidate from being
+             * accepted repeatedly within a very short period.
+             */
+            if (
+                now -
+                    lastAcceptedTime >=
+                100L
+            ) {
+
+                lastAcceptedTime =
+                    now
+
+                handleMultiplier(
+                    pendingMultiplier
+                )
+
+                pendingCount = 0
+            }
+        }
     }
 
     private fun handleMultiplier(
@@ -460,14 +624,10 @@ class ScreenCaptureService : Service() {
     }
 
     /*
+     * This remains unchanged.
+     *
      * This is deliberately a safe placeholder
      * prediction layer for the first compiling build.
-     *
-     * It does NOT claim to predict the next Aviator
-     * round with certainty.
-     *
-     * The advanced statistical model can be connected
-     * here after screen detection is confirmed working.
      */
     private fun calculatePrediction(): Double? {
 
