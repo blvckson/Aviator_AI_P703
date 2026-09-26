@@ -139,6 +139,8 @@ class MainActivity : Activity() {
                 )
             )
 
+            ScreenCaptureService.clearProjectionData()
+
             statusText.text =
                 "Monitor stopped"
 
@@ -253,28 +255,22 @@ class MainActivity : Activity() {
         }
 
         /*
-         * The Intent returned by Android contains the
-         * MediaProjection permission token.
+         * Store the MediaProjection permission data
+         * directly in ScreenCaptureService.
          *
-         * Pass that Intent directly to the monitoring
-         * service.
+         * We do NOT put the capture Intent inside
+         * another Intent anymore.
          */
+        ScreenCaptureService.setProjectionData(
+            resultCode,
+            data
+        )
+
         val serviceIntent =
             Intent(
                 this,
                 ScreenCaptureService::class.java
-            ).apply {
-
-                putExtra(
-                    "resultCode",
-                    resultCode
-                )
-
-                putExtra(
-                    "data",
-                    data
-                )
-            }
+            )
 
         try {
 
@@ -298,6 +294,8 @@ class MainActivity : Activity() {
                 "Screen monitor running"
 
         } catch (e: Exception) {
+
+            ScreenCaptureService.clearProjectionData()
 
             statusText.text =
                 "ERROR starting monitor: ${e.message}"
