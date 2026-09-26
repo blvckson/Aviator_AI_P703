@@ -1,3 +1,4 @@
+
 package com.example.aviatorai
 
 import android.app.Activity
@@ -139,8 +140,6 @@ class MainActivity : Activity() {
                 )
             )
 
-            ScreenCaptureService.clearProjectionData()
-
             statusText.text =
                 "Monitor stopped"
 
@@ -255,22 +254,28 @@ class MainActivity : Activity() {
         }
 
         /*
-         * Store the MediaProjection permission data
-         * directly in ScreenCaptureService.
+         * Pass the MediaProjection permission data
+         * directly to ScreenCaptureService.
          *
-         * We do NOT put the capture Intent inside
-         * another Intent anymore.
+         * This matches the existing onStartCommand()
+         * implementation in ScreenCaptureService.
          */
-        ScreenCaptureService.setProjectionData(
-            resultCode,
-            data
-        )
-
         val serviceIntent =
             Intent(
                 this,
                 ScreenCaptureService::class.java
-            )
+            ).apply {
+
+                putExtra(
+                    "resultCode",
+                    resultCode
+                )
+
+                putExtra(
+                    "data",
+                    data
+                )
+            }
 
         try {
 
@@ -295,10 +300,9 @@ class MainActivity : Activity() {
 
         } catch (e: Exception) {
 
-            ScreenCaptureService.clearProjectionData()
-
             statusText.text =
                 "ERROR starting monitor: ${e.message}"
         }
     }
 }
+
