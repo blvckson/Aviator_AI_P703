@@ -1,4 +1,4 @@
-r com.example.aviatorai
+package com.example.aviatorai
 
 import android.app.Activity
 import android.content.BroadcastReceiver
