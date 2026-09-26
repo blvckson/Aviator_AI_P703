@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.Button
 import android.widget.TextView
@@ -14,6 +15,7 @@ import java.util.Locale
 class MainActivity : Activity() {
 
     companion object {
+
         private const val SCREEN_CAPTURE_REQUEST = 1001
 
         private const val ROUND_COMPLETED_ACTION =
@@ -85,7 +87,9 @@ class MainActivity : Activity() {
                             )
 
                         if (!message.isNullOrEmpty()) {
-                            statusText.text = message
+
+                            statusText.text =
+                                message
                         }
                     }
                 }
@@ -122,6 +126,7 @@ class MainActivity : Activity() {
             )
 
         startButton.setOnClickListener {
+
             requestScreenCapture()
         }
 
@@ -136,6 +141,9 @@ class MainActivity : Activity() {
 
             statusText.text =
                 "Monitor stopped"
+
+            detectedText.text =
+                "Detected: --"
         }
     }
 
@@ -167,27 +175,40 @@ class MainActivity : Activity() {
 
     override fun onPause() {
 
-        unregisterReceiver(
-            multiplierReceiver
-        )
+        try {
+
+            unregisterReceiver(
+                multiplierReceiver
+            )
+
+        } catch (_: IllegalArgumentException) {
+        }
 
         super.onPause()
     }
 
     private fun requestScreenCapture() {
 
-        val manager =
-            getSystemService(
-                MEDIA_PROJECTION_SERVICE
-            ) as MediaProjectionManager
+        try {
 
-        val intent =
-            manager.createScreenCaptureIntent()
+            val manager =
+                getSystemService(
+                    MEDIA_PROJECTION_SERVICE
+                ) as MediaProjectionManager
 
-        startActivityForResult(
-            intent,
-            SCREEN_CAPTURE_REQUEST
-        )
+            val captureIntent =
+                manager.createScreenCaptureIntent()
+
+            startActivityForResult(
+                captureIntent,
+                SCREEN_CAPTURE_REQUEST
+            )
+
+        } catch (e: Exception) {
+
+            statusText.text =
+                "ERROR requesting screen capture: ${e.message}"
+        }
     }
 
     @Deprecated(
@@ -205,14 +226,20 @@ class MainActivity : Activity() {
             data
         )
 
-        if (requestCode != SCREEN_CAPTURE_REQUEST) {
+        if (
+            requestCode !=
+            SCREEN_CAPTURE_REQUEST
+        ) {
             return
         }
 
-        if (resultCode != RESULT_OK) {
+        if (
+            resultCode !=
+            RESULT_OK
+        ) {
 
             statusText.text =
-                "ERROR: Android returned resultCode = $resultCode"
+                "ERROR: Screen capture permission denied"
 
             return
         }
@@ -225,6 +252,13 @@ class MainActivity : Activity() {
             return
         }
 
+        /*
+         * The Intent returned by Android contains the
+         * MediaProjection permission token.
+         *
+         * Pass that Intent directly to the monitoring
+         * service.
+         */
         val serviceIntent =
             Intent(
                 this,
@@ -242,11 +276,31 @@ class MainActivity : Activity() {
                 )
             }
 
-        startService(
-            serviceIntent
-        )
+        try {
 
-        statusText.text =
-            "Screen monitor running"
+            if (
+                Build.VERSION.SDK_INT >=
+                Build.VERSION_CODES.O
+            ) {
+
+                startForegroundService(
+                    serviceIntent
+                )
+
+            } else {
+
+                startService(
+                    serviceIntent
+                )
+            }
+
+            statusText.text =
+                "Screen monitor running"
+
+        } catch (e: Exception) {
+
+            statusText.text =
+                "ERROR starting monitor: ${e.message}"
+        }
     }
 }
