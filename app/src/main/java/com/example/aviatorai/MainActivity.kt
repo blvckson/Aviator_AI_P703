@@ -14,7 +14,7 @@ import java.util.Locale
 
 class MainActivity : Activity() {
 
-```
+
 companion object {
 
     private const val SCREEN_CAPTURE_REQUEST = 1001
