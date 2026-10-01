@@ -396,7 +396,6 @@ class ScreenCaptureService : Service() {
                     true
                 )
                 runOcr(enlarged)
-                crop.recycle()
             }
 
         } catch (e: Exception) {
