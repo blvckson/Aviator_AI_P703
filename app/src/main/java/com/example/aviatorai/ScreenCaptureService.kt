@@ -50,6 +50,9 @@ class ScreenCaptureService : Service() {
         private const val DIAGNOSTIC_ACTION =
             "com.example.aviatorai.DIAGNOSTIC"
 
+        private const val PREDICTION_ACTION =
+            "com.example.aviatorai.PREDICTION"
+
         /*
          * MediaProjection permission data is supplied by
          * MainActivity before the service is started.
@@ -908,6 +911,23 @@ class ScreenCaptureService : Service() {
                     estimate.confidence,
                     estimate.sampleSize
                 )
+
+            sendPrediction(estimate)
+        }
+    }
+
+    private fun sendPrediction(
+        estimate: PredictionEstimate
+    ) {
+        sendBroadcast(
+            Intent(PREDICTION_ACTION).apply {
+                putExtra("value", estimate.value)
+                putExtra("lower", estimate.lower)
+                putExtra("upper", estimate.upper)
+                putExtra("confidence", estimate.confidence)
+                putExtra("sampleSize", estimate.sampleSize)
+            }
+        )
         }
     }
 
