@@ -17,6 +17,8 @@ import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
+import android.content.SharedPreferences
+import org.json.JSONArray
 import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
@@ -129,7 +131,18 @@ class ScreenCaptureService : Service() {
     private val history =
         mutableListOf<Double>()
 
+    private lateinit var preferences:
+            SharedPreferences
+
     private val predictionModel = PredictionModel()
+
+    // Live OCR values are never inserted directly into the historical model.
+    // Only the completed round value is persisted.
+    private var currentRoundPeak =
+        Double.NaN
+
+    private var lowAfterPeakCount =
+        0
 
     private var lastDetected =
         Double.NaN
@@ -160,6 +173,12 @@ class ScreenCaptureService : Service() {
             getSystemService(
                 Context.WINDOW_SERVICE
             ) as WindowManager
+
+        preferences = getSharedPreferences(
+            "aviator_history",
+            Context.MODE_PRIVATE
+        )
+        loadHistory()
 
         createNotificationChannel()
 
@@ -375,7 +394,7 @@ class ScreenCaptureService : Service() {
 
             // OCR the full frame and a large center crop. The multiplier
             // is usually central and becomes much easier to read when enlarged.
-            runOcr(bitmap)
+            runOcr(bitmap, false)
 
             val cropLeft = (bitmap.width * 0.08f).toInt().coerceAtLeast(0)
             val cropTop = (bitmap.height * 0.08f).toInt().coerceAtLeast(0)
@@ -395,7 +414,7 @@ class ScreenCaptureService : Service() {
                     (crop.height * 1.8f).toInt().coerceAtLeast(1),
                     true
                 )
-                runOcr(enlarged)
+                runOcr(enlarged, true)
             }
 
         } catch (e: Exception) {
@@ -411,7 +430,8 @@ class ScreenCaptureService : Service() {
     }
 
     private fun runOcr(
-        bitmap: Bitmap
+        bitmap: Bitmap,
+        allowBareDecimal: Boolean
     ) {
 
         val input =
@@ -427,13 +447,21 @@ class ScreenCaptureService : Service() {
                 val text =
                     result.text
 
+                if (text.isBlank()) {
+                    sendDiagnosticThrottled(
+                        "No valid multiplier detected"
+                    )
+                    return@addOnSuccessListener
+                }
+
                 sendDiagnosticThrottled(
                     "OCR RAW: $text"
                 )
 
                 val multiplier =
                     extractMultiplier(
-                        text
+                        text,
+                        allowBareDecimal
                     )
 
                 if (
@@ -454,7 +482,8 @@ class ScreenCaptureService : Service() {
     }
 
     private fun extractMultiplier(
-        text: String
+        text: String,
+        allowBareDecimal: Boolean
     ): Double? {
 
         if (
@@ -488,7 +517,7 @@ class ScreenCaptureService : Service() {
         // Some OCR engines drop the trailing x. Only accept a decimal with
         // 1–4 fractional digits when the OCR text is short (typical of the
         // cropped multiplier region), avoiding most UI-number false positives.
-        if (normalized.length <= 120) {
+        if (allowBareDecimal && normalized.length <= 120) {
             val bare = Regex(
                 """(?<![\\d.])(\\d{1,5}\\.\\d{1,4})(?![\\d.])"""
             )
@@ -567,105 +596,130 @@ class ScreenCaptureService : Service() {
     private fun handleMultiplier(
         multiplier: Double
     ) {
-
-        if (
-            !lastDetected.isNaN() &&
-            abs(
-                multiplier -
-                    lastDetected
-            ) < 0.001
-        ) {
+        if (!lastDetected.isNaN() &&
+            abs(multiplier - lastDetected) < 0.001) {
             return
         }
 
-        lastDetected =
-            multiplier
+        lastDetected = multiplier
+        updateDetected(multiplier)
+        sendLiveMultiplier(multiplier)
 
-        updateDetected(
-            multiplier
-        )
+        /*
+         * Round tracking:
+         * The animated live multiplier is telemetry only.
+         * A round enters the historical dataset only when a new low/start
+         * is validated after a rising peak. This prevents hundreds of OCR
+         * frames from becoming hundreds of fake "historical rounds".
+         */
+        if (currentRoundPeak.isNaN()) {
+            currentRoundPeak = multiplier
+            lowAfterPeakCount = 0
+        } else if (multiplier >= currentRoundPeak - 0.01) {
+            currentRoundPeak = maxOf(currentRoundPeak, multiplier)
+            lowAfterPeakCount = 0
+        } else {
+            val largeDrop =
+                multiplier <= 1.10 ||
+                multiplier <= currentRoundPeak * 0.82
 
-        sendLiveMultiplier(
-            multiplier
-        )
+            if (largeDrop && currentRoundPeak >= 1.05) {
+                lowAfterPeakCount++
+            } else {
+                lowAfterPeakCount = 0
+            }
 
-        addToHistory(
-            multiplier
-        )
+            if (lowAfterPeakCount >= 2) {
+                val completed = currentRoundPeak
+                completeRound(completed)
 
-        val prediction =
-            calculatePrediction()
-
-        if (
-            prediction != null
-        ) {
-
-            updatePrediction(
-                prediction
-            )
+                currentRoundPeak = multiplier
+                lowAfterPeakCount = 0
+            }
         }
 
-        if (
-            multiplier <= 1.05 &&
-            !lastRoundValue.isNaN() &&
-            lastRoundValue > 1.05
-        ) {
-
-            sendRoundCompleted(
-                lastRoundValue
-            )
-        }
-
-        if (
-            multiplier > 1.05
-        ) {
-
-            lastRoundValue =
-                multiplier
+        /*
+         * A prediction is based only on completed, validated rounds.
+         * No history means no estimate.
+         */
+        val prediction = calculatePrediction()
+        if (prediction != null) {
+            updatePrediction(prediction)
         }
     }
 
-    private fun addToHistory(
+    private fun completeRound(
         multiplier: Double
     ) {
-
-        if (
-            history.isEmpty()
-        ) {
-
-            history.add(
-                multiplier
-            )
-
+        if (!multiplier.isFinite() ||
+            multiplier < 1.0 ||
+            multiplier > 10000.0) {
             return
         }
 
-        val previous =
-            history.last()
-
-        if (
-            abs(
-                previous -
-                    multiplier
-            ) >= 0.001
-        ) {
-
-            history.add(
-                multiplier
-            )
+        // Reject duplicate completed values created by repeated OCR frames.
+        if (history.isNotEmpty() &&
+            abs(history.last() - multiplier) < 0.001) {
+            return
         }
 
-        if (
-            history.size > 5000
-        ) {
-
+        history.add(multiplier)
+        if (history.size > 2000) {
             history.removeAt(0)
         }
+
+        saveHistory()
+
+        sendRoundCompleted(multiplier)
+
+        updateStatus(
+            String.format(
+                Locale.US,
+                "ROUND SAVED %.2f× | history=%d",
+                multiplier,
+                history.size
+            )
+        )
     }
 
     private fun calculatePrediction(): PredictionEstimate? {
-
         return predictionModel.estimate(history)
+    }
+
+    private fun loadHistory() {
+        try {
+            val raw = preferences.getString(
+                "rounds",
+                "[]"
+            ) ?: "[]"
+            val array = JSONArray(raw)
+            for (i in 0 until array.length()) {
+                val value = array.optDouble(i, Double.NaN)
+                if (value.isFinite() && value in 1.0..10000.0) {
+                    history.add(value)
+                }
+            }
+            if (history.size > 2000) {
+                val trimmed = history.takeLast(2000)
+                history.clear()
+                history.addAll(trimmed)
+            }
+        } catch (_: Exception) {
+            history.clear()
+        }
+    }
+
+    private fun saveHistory() {
+        try {
+            val array = JSONArray()
+            for (value in history) {
+                array.put(value)
+            }
+            preferences.edit()
+                .putString("rounds", array.toString())
+                .apply()
+        } catch (_: Exception) {
+        }
     }
 
     private fun createFloatingDisplay() {
@@ -711,10 +765,10 @@ class ScreenCaptureService : Service() {
             "Detected: --"
 
         predictedTextView?.text =
-            "Predicted: --"
+            "Next: —"
 
         confidenceTextView?.text =
-            "Uncertainty: --"
+            "No estimate until 10 completed rounds"
 
         statusTextView?.setTextColor(
             Color.WHITE
@@ -906,11 +960,12 @@ class ScreenCaptureService : Service() {
             confidenceTextView?.text =
                 String.format(
                     Locale.US,
-                    "Range: %.2f–%.2f× | Confidence: %.0f%% | n=%d",
+                    "Range %.2f–%.2f× | %.0f%% | n=%d | P≥2× %.0f%%",
                     estimate.lower,
                     estimate.upper,
                     estimate.confidence,
-                    estimate.sampleSize
+                    estimate.sampleSize,
+                    estimate.probabilityAbove2x
                 )
 
             sendPrediction(estimate)
