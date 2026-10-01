@@ -928,7 +928,6 @@ class ScreenCaptureService : Service() {
                 putExtra("sampleSize", estimate.sampleSize)
             }
         )
-        }
     }
 
     private fun updateStatus(
