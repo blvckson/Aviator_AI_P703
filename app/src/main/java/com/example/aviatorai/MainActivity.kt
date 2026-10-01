@@ -27,10 +27,15 @@ companion object {
 
     private const val DIAGNOSTIC_ACTION =
         "com.example.aviatorai.DIAGNOSTIC"
+
+    private const val PREDICTION_ACTION =
+        "com.example.aviatorai.PREDICTION"
 }
 
 private lateinit var statusText: TextView
 private lateinit var detectedText: TextView
+private lateinit var estimateText: TextView
+private lateinit var confidenceText: TextView
 
 private val multiplierReceiver =
     object : BroadcastReceiver() {
@@ -80,6 +85,30 @@ private val multiplierReceiver =
                     }
                 }
 
+                PREDICTION_ACTION -> {
+                    val value = intent.getDoubleExtra("value", Double.NaN)
+                    val lower = intent.getDoubleExtra("lower", Double.NaN)
+                    val upper = intent.getDoubleExtra("upper", Double.NaN)
+                    val confidence = intent.getDoubleExtra("confidence", 0.0)
+                    val sampleSize = intent.getIntExtra("sampleSize", 0)
+
+                    if (value.isFinite()) {
+                        estimateText.text = String.format(
+                            Locale.US,
+                            "Statistical estimate: %.2f×",
+                            value
+                        )
+                        confidenceText.text = String.format(
+                            Locale.US,
+                            "Uncertainty: %.2f–%.2f× | Confidence: %.0f%% | n=%d",
+                            lower,
+                            upper,
+                            confidence,
+                            sampleSize
+                        )
+                    }
+                }
+
                 DIAGNOSTIC_ACTION -> {
 
                     val message =
@@ -109,6 +138,12 @@ override fun onCreate(
         findViewById(
             R.id.statusText
         )
+
+    estimateText =
+        findViewById(R.id.estimateText)
+
+    confidenceText =
+        findViewById(R.id.confidenceText)
 
     detectedText =
         findViewById(
@@ -145,6 +180,8 @@ override fun onCreate(
 
         detectedText.text =
             "Detected: --"
+        estimateText.text = "Statistical estimate: —"
+        confidenceText.text = "Uncertainty: —"
     }
 }
 
@@ -165,6 +202,10 @@ override fun onResume() {
 
             addAction(
                 DIAGNOSTIC_ACTION
+            )
+
+            addAction(
+                PREDICTION_ACTION
             )
         }
 
