@@ -111,6 +111,9 @@ class ScreenCaptureService : Service() {
     private var predictedTextView:
             TextView? = null
 
+    private var confidenceTextView:
+            TextView? = null
+
     private var statusTextView:
             TextView? = null
 
@@ -121,6 +124,8 @@ class ScreenCaptureService : Service() {
 
     private val history =
         mutableListOf<Double>()
+
+    private val predictionModel = PredictionModel()
 
     private var lastDetected =
         Double.NaN
@@ -654,51 +659,9 @@ class ScreenCaptureService : Service() {
         }
     }
 
-    private fun calculatePrediction():
-            Double? {
+    private fun calculatePrediction(): PredictionEstimate? {
 
-        if (
-            history.size < 10
-        ) {
-            return null
-        }
-
-        val recent =
-            history.takeLast(
-                30
-            )
-
-        if (
-            recent.isEmpty()
-        ) {
-            return null
-        }
-
-        val sorted =
-            recent.sorted()
-
-        val middle =
-            sorted.size / 2
-
-        val median =
-            if (
-                sorted.size % 2 == 0
-            ) {
-
-                (
-                    sorted[middle - 1] +
-                        sorted[middle]
-                    ) / 2.0
-
-            } else {
-
-                sorted[middle]
-            }
-
-        return median.coerceIn(
-            1.01,
-            100.0
-        )
+        return predictionModel.estimate(history)
     }
 
     private fun createFloatingDisplay() {
@@ -734,6 +697,9 @@ class ScreenCaptureService : Service() {
         predictedTextView =
             TextView(this)
 
+        confidenceTextView =
+            TextView(this)
+
         statusTextView?.text =
             "AVIATOR MONITOR"
 
@@ -742,6 +708,9 @@ class ScreenCaptureService : Service() {
 
         predictedTextView?.text =
             "Predicted: --"
+
+        confidenceTextView?.text =
+            "Uncertainty: --"
 
         statusTextView?.setTextColor(
             Color.WHITE
@@ -765,6 +734,10 @@ class ScreenCaptureService : Service() {
 
         container.addView(
             predictedTextView
+        )
+
+        container.addView(
+            confidenceTextView
         )
 
         val windowType =
@@ -914,7 +887,7 @@ class ScreenCaptureService : Service() {
     }
 
     private fun updatePrediction(
-        prediction: Double
+        estimate: PredictionEstimate
     ) {
 
         handler.post {
@@ -922,8 +895,18 @@ class ScreenCaptureService : Service() {
             predictedTextView?.text =
                 String.format(
                     Locale.US,
-                    "Predicted: %.2f×",
-                    prediction
+                    "Estimate: %.2f×",
+                    estimate.value
+                )
+
+            confidenceTextView?.text =
+                String.format(
+                    Locale.US,
+                    "Range: %.2f–%.2f× | Confidence: %.0f%% | n=%d",
+                    estimate.lower,
+                    estimate.upper,
+                    estimate.confidence,
+                    estimate.sampleSize
                 )
         }
     }
