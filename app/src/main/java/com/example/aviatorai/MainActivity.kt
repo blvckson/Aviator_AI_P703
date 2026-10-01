@@ -8,6 +8,8 @@ import android.content.IntentFilter
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
+import android.net.Uri
 import android.widget.Button
 import android.widget.TextView
 import java.util.Locale
@@ -161,7 +163,21 @@ override fun onCreate(
         )
 
     startButton.setOnClickListener {
-        requestScreenCapture()
+        if (!Settings.canDrawOverlays(this)) {
+            statusText.text = "First allow Display over other apps, then press Start again."
+            try {
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
+                )
+            } catch (_: Exception) {
+                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+            }
+        } else {
+            requestScreenCapture()
+        }
     }
 
     stopButton.setOnClickListener {
@@ -188,6 +204,13 @@ override fun onCreate(
 override fun onResume() {
 
     super.onResume()
+
+    // Return from the overlay permission screen and show the correct state.
+    if (::statusText.isInitialized && Settings.canDrawOverlays(this)) {
+        if (statusText.text.toString().startsWith("First allow")) {
+            statusText.text = "Overlay permission granted. Press Start Monitor."
+        }
+    }
 
     val filter =
         IntentFilter().apply {
