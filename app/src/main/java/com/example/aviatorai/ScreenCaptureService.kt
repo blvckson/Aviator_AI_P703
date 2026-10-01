@@ -18,6 +18,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -167,7 +168,6 @@ class ScreenCaptureService : Service() {
             createNotification()
         )
 
-        createFloatingDisplay()
     }
 
     override fun onStartCommand(
@@ -247,6 +247,20 @@ class ScreenCaptureService : Service() {
                 )
 
                 return
+            }
+
+            // The overlay must be created only after screen-capture permission
+            // is active. Creating it in onCreate() can fail before Android has
+            // granted the projection/overlay app-op.
+            if (!Settings.canDrawOverlays(this)) {
+                sendDiagnostic(
+                    "ERROR: Display-over-other-apps permission is not granted"
+                )
+                return
+            }
+
+            if (overlayView == null) {
+                createFloatingDisplay()
             }
 
             val metrics =
@@ -359,9 +373,31 @@ class ScreenCaptureService : Service() {
                 buffer
             )
 
-            runOcr(
-                bitmap
-            )
+            // OCR the full frame and a large center crop. The multiplier
+            // is usually central and becomes much easier to read when enlarged.
+            runOcr(bitmap)
+
+            val cropLeft = (bitmap.width * 0.08f).toInt().coerceAtLeast(0)
+            val cropTop = (bitmap.height * 0.08f).toInt().coerceAtLeast(0)
+            val cropRight = (bitmap.width * 0.92f).toInt().coerceAtMost(bitmap.width)
+            val cropBottom = (bitmap.height * 0.72f).toInt().coerceAtMost(bitmap.height)
+            if (cropRight > cropLeft && cropBottom > cropTop) {
+                val crop = Bitmap.createBitmap(
+                    bitmap,
+                    cropLeft,
+                    cropTop,
+                    cropRight - cropLeft,
+                    cropBottom - cropTop
+                )
+                val enlarged = Bitmap.createScaledBitmap(
+                    crop,
+                    (crop.width * 1.8f).toInt().coerceAtLeast(1),
+                    (crop.height * 1.8f).toInt().coerceAtLeast(1),
+                    true
+                )
+                runOcr(enlarged)
+                crop.recycle()
+            }
 
         } catch (e: Exception) {
 
@@ -428,77 +464,43 @@ class ScreenCaptureService : Service() {
             return null
         }
 
-        val normalized =
-            text
-                .replace(
-                    '×',
-                    'x'
-                )
-                .replace(
-                    'X',
-                    'x'
-                )
-                .replace(
-                    'O',
-                    '0'
-                )
-                .replace(
-                    'o',
-                    '0'
-                )
-                .replace(
-                    'I',
-                    '1'
-                )
-                .replace(
-                    'l',
-                    '1'
-                )
-                .replace(
-                    'L',
-                    '1'
-                )
-                .replace(
-                    ',',
-                    '.'
-                )
+        val normalized = text
+            .replace('×', 'x')
+            .replace('X', 'x')
+            .replace('O', '0')
+            .replace('o', '0')
+            .replace('I', '1')
+            .replace('l', '1')
+            .replace('L', '1')
+            .replace(',', '.')
 
-        val pattern =
-            Regex(
-                """(?<![\d.])(\d{1,5}(?:\.\d{1,4})?)\s*x\b"""
-            )
+        // Primary form: Aviator normally renders values such as 1.25x.
+        val withX = Regex(
+            """(?<![\\d.])(\\d{1,5}(?:\\.\\d{1,4})?)\\s*[xX]\\b"""
+        )
 
-        val candidates =
-            mutableListOf<Double>()
-
-        for (
-            match in
-            pattern.findAll(normalized)
-        ) {
-
-            val raw =
-                match.groupValues[1]
-
-            val value =
-                raw.toDoubleOrNull()
-
-            if (
-                value != null
-            ) {
-
-                if (
-                    value >= 1.00 &&
-                    value <= 10000.0
-                ) {
-
-                    candidates.add(
-                        value
-                    )
-                }
+        for (match in withX.findAll(normalized)) {
+            val value = match.groupValues[1].toDoubleOrNull()
+            if (value != null && value.isFinite() && value in 1.0..10000.0) {
+                return value
             }
         }
 
-        return candidates.lastOrNull()
+        // Some OCR engines drop the trailing x. Only accept a decimal with
+        // 1–4 fractional digits when the OCR text is short (typical of the
+        // cropped multiplier region), avoiding most UI-number false positives.
+        if (normalized.length <= 120) {
+            val bare = Regex(
+                """(?<![\\d.])(\\d{1,5}\\.\\d{1,4})(?![\\d.])"""
+            )
+            val values = bare.findAll(normalized)
+                .mapNotNull { it.groupValues[1].toDoubleOrNull() }
+                .filter { it.isFinite() && it in 1.0..10000.0 }
+                .toList()
+            if (values.size == 1) return values[0]
+        }
+
+        return null
     }
 
     private fun validateMultiplier(
