@@ -38,325 +38,165 @@ import kotlin.math.abs
 class ScreenCaptureService : Service() {
 
     companion object {
+        private const val CHANNEL_ID = "aviator_screen_monitor"
+        private const val NOTIFICATION_ID = 1001
+        private const val ROUND_COMPLETED_ACTION = "com.example.aviatorai.ROUND_COMPLETED"
+        private const val LIVE_MULTIPLIER_ACTION = "com.example.aviatorai.MULTIPLIER_LIVE"
+        private const val DIAGNOSTIC_ACTION = "com.example.aviatorai.DIAGNOSTIC"
+        private const val PREDICTION_ACTION = "com.example.aviatorai.PREDICTION"
 
-        private const val CHANNEL_ID =
-            "aviator_screen_monitor"
+        private var projectionResultCode: Int = -1
+        private var projectionData: Intent? = null
 
-        private const val NOTIFICATION_ID =
-            1001
-
-        private const val ROUND_COMPLETED_ACTION =
-            "com.example.aviatorai.ROUND_COMPLETED"
-
-        private const val LIVE_MULTIPLIER_ACTION =
-            "com.example.aviatorai.MULTIPLIER_LIVE"
-
-        private const val DIAGNOSTIC_ACTION =
-            "com.example.aviatorai.DIAGNOSTIC"
-
-        private const val PREDICTION_ACTION =
-            "com.example.aviatorai.PREDICTION"
-
-        /*
-         * MediaProjection permission data is supplied by
-         * MainActivity before the service is started.
-         *
-         * This fixes:
-         *
-         * ERROR: Screen capture permission data missing
-         */
-        private var projectionResultCode: Int =
-            -1
-
-        private var projectionData: Intent? =
-            null
-
-        fun setProjectionData(
-            resultCode: Int,
-            data: Intent
-        ) {
-            projectionResultCode =
-                resultCode
-
-            projectionData =
-                data
+        fun setProjectionData(resultCode: Int, data: Intent) {
+            projectionResultCode = resultCode
+            projectionData = data
         }
 
         fun clearProjectionData() {
-
-            projectionResultCode =
-                -1
-
-            projectionData =
-                null
+            projectionResultCode = -1
+            projectionData = null
         }
     }
 
-    private val handler =
-        Handler(
-            Looper.getMainLooper()
-        )
+    private val handler = Handler(Looper.getMainLooper())
+    private var mediaProjection: MediaProjection? = null
+    private var virtualDisplay: VirtualDisplay? = null
+    private var imageReader: ImageReader? = null
+    private lateinit var windowManager: WindowManager
+    private var overlayView: View? = null
+    private var detectedTextView: TextView? = null
+    private var predictedTextView: TextView? = null
+    private var confidenceTextView: TextView? = null
+    private var statusTextView: TextView? = null
 
-    private var mediaProjection:
-            MediaProjection? = null
-
-    private var virtualDisplay:
-            VirtualDisplay? = null
-
-    private var imageReader:
-            ImageReader? = null
-
-    private lateinit var windowManager:
-            WindowManager
-
-    private var overlayView:
-            View? = null
-
-    private var detectedTextView:
-            TextView? = null
-
-    private var predictedTextView:
-            TextView? = null
-
-    private var confidenceTextView:
-            TextView? = null
-
-    private var statusTextView:
-            TextView? = null
-
-    private val recognizer =
-        TextRecognition.getClient(
-            TextRecognizerOptions.DEFAULT_OPTIONS
-        )
-
-    private val history =
-        mutableListOf<Double>()
-
-    private lateinit var preferences:
-            SharedPreferences
-
+    private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    private val history = mutableListOf<Double>()
+    private lateinit var preferences: SharedPreferences
     private val predictionModel = PredictionModel()
 
-    // Live OCR values are never inserted directly into the historical model.
-    // Only the completed round value is persisted.
-    private var currentRoundPeak =
-        Double.NaN
-
-    private var lowAfterPeakCount =
-        0
-
-    private var lastDetected =
-        Double.NaN
-
-    private var lastRoundValue =
-        Double.NaN
-
-    private var lastDiagnosticTime =
-        0L
-
+    private var currentRoundPeak = Double.NaN
+    private var lowAfterPeakCount = 0
+    private var lastDetected = Double.NaN
+    private var lastRoundValue = Double.NaN
+    private var lastDiagnosticTime = 0L
     private var ocrBusy = false
-
-    /*
-     * Detection validation state.
-     */
-    private var pendingMultiplier =
-        Double.NaN
-
-    private var pendingCount =
-        0
-
-    private var lastAcceptedTime =
-        0L
+    private var pendingMultiplier = Double.NaN
+    private var pendingCount = 0
+    private var lastAcceptedTime = 0L
+    private var serviceStopping = false
 
     override fun onCreate() {
-
         super.onCreate()
 
-        windowManager =
-            getSystemService(
-                Context.WINDOW_SERVICE
-            ) as WindowManager
-
-        preferences = getSharedPreferences(
-            "aviator_history",
-            Context.MODE_PRIVATE
-        )
+        windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        preferences = getSharedPreferences("aviator_history", Context.MODE_PRIVATE)
         loadHistory()
-
         createNotificationChannel()
 
-        startForeground(
-            NOTIFICATION_ID,
-            createNotification()
-        )
-
+        // Keep this service alive until the user explicitly presses Stop.
+        startForeground(NOTIFICATION_ID, createNotification())
     }
 
-    override fun onStartCommand(
-        intent: Intent?,
-        flags: Int,
-        startId: Int
-    ): Int {
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (serviceStopping) return START_NOT_STICKY
 
-        /*
-         * IMPORTANT:
-         *
-         * Do not read MediaProjection permission
-         * data from the service Intent.
-         *
-         * MainActivity stores it using
-         * setProjectionData() before starting
-         * this service.
-         */
-        val resultCode = intent?.getIntExtra("projection_result_code", -1) ?: -1
+        // Android can call START_STICKY services again with a null intent.
+        // Never interpret that normal lifecycle event as a permission failure.
+        if (mediaProjection != null && virtualDisplay != null && imageReader != null) {
+            updateStatus("MONITORING")
+            return START_STICKY
+        }
 
-        val data = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val resultCode =
+            intent?.getIntExtra("projection_result_code", Activity.RESULT_OK)
+                ?: projectionResultCode
+
+        val data: Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent?.getParcelableExtra("projection_data", Intent::class.java)
+                ?: projectionData
         } else {
             @Suppress("DEPRECATION")
-            intent?.getParcelableExtra("projection_data")
+            (intent?.getParcelableExtra("projection_data") ?: projectionData)
         }
 
         if (resultCode != Activity.RESULT_OK || data == null) {
-
-            sendDiagnostic(
-                "ERROR: Screen capture permission data missing"
-            )
-
-            return START_NOT_STICKY
+            // Only report this when there is no existing capture session.
+            sendDiagnostic("ERROR: Screen capture permission data missing")
+            return START_STICKY
         }
 
-        startCapture(
-            resultCode,
-            data
-        )
+        // Keep a local copy for the whole lifetime of this service.
+        projectionResultCode = resultCode
+        projectionData = data
 
-        /*
-         * The service now has its own local reference
-         * to the permission Intent through startCapture().
-         */
-        clearProjectionData()
+        startCapture(resultCode, data)
 
-        return START_NOT_STICKY
+        // Do NOT clear the permission data here. A sticky service may receive
+        // another lifecycle start command and needs the same session data.
+        return START_STICKY
     }
 
-    private fun startCapture(
-        resultCode: Int,
-        data: Intent
-    ) {
-
+    private fun startCapture(resultCode: Int, data: Intent) {
         try {
-
-            stopCapture()
+            if (mediaProjection != null || virtualDisplay != null || imageReader != null) {
+                stopCapture()
+            }
 
             val projectionManager =
-                getSystemService(
-                    Context.MEDIA_PROJECTION_SERVICE
-                ) as MediaProjectionManager
+                getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
 
-            mediaProjection =
-                projectionManager.getMediaProjection(
-                    resultCode,
-                    data
-                )
+            mediaProjection = projectionManager.getMediaProjection(resultCode, data)
 
-            if (
-                mediaProjection == null
-            ) {
-
-                sendDiagnostic(
-                    "ERROR: MediaProjection unavailable"
-                )
-
+            if (mediaProjection == null) {
+                sendDiagnostic("ERROR: MediaProjection unavailable")
                 return
             }
 
-            // The overlay must be created only after screen-capture permission
-            // is active. Creating it in onCreate() can fail before Android has
-            // granted the projection/overlay app-op.
             if (!Settings.canDrawOverlays(this)) {
-                sendDiagnostic(
-                    "ERROR: Display-over-other-apps permission is not granted"
-                )
+                sendDiagnostic("ERROR: Display-over-other-apps permission is not granted")
                 return
             }
 
-            if (overlayView == null) {
-                createFloatingDisplay()
-            }
+            if (overlayView == null) createFloatingDisplay()
 
-            val metrics =
-                resources.displayMetrics
+            val metrics = resources.displayMetrics
+            val width = metrics.widthPixels
+            val height = metrics.heightPixels
+            val density = metrics.densityDpi
 
-            val width =
-                metrics.widthPixels
+            imageReader = ImageReader.newInstance(
+                width, height, PixelFormat.RGBA_8888, 2
+            )
 
-            val height =
-                metrics.heightPixels
-
-            val density =
-                metrics.densityDpi
-
-            imageReader =
-                ImageReader.newInstance(
-                    width,
-                    height,
-                    PixelFormat.RGBA_8888,
-                    2
-                )
-
-            virtualDisplay =
-                mediaProjection?.createVirtualDisplay(
-                    "AviatorScreenMonitor",
-                    width,
-                    height,
-                    density,
-                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                    imageReader?.surface,
-                    null,
-                    handler
-                )
-
-            imageReader?.setOnImageAvailableListener(
-                { reader ->
-                    processImage(reader)
-                },
+            virtualDisplay = mediaProjection?.createVirtualDisplay(
+                "AviatorScreenMonitor",
+                width,
+                height,
+                density,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                imageReader?.surface,
+                null,
                 handler
             )
 
-            updateStatus(
-                "MONITORING"
-            )
+            imageReader?.setOnImageAvailableListener({ reader ->
+                processImage(reader)
+            }, handler)
 
-            sendDiagnostic(
-                "Screen capture started"
-            )
-
+            updateStatus("MONITORING")
+            sendDiagnostic("Screen capture started")
         } catch (e: Exception) {
-
-            sendDiagnostic(
-                "Capture ERROR: ${e.message}"
-            )
+            sendDiagnostic("Capture ERROR: ${e.message}")
+            // Keep the foreground service alive so the user can retry without
+            // the overlay disappearing unexpectedly.
+            updateStatus("MONITOR ERROR — press Start to retry")
         }
     }
 
-    private fun processImage(
-        reader: ImageReader
-    ) {
-
-        val image =
-            try {
-
-                reader.acquireLatestImage()
-
-            } catch (_: Exception) {
-
-                null
-            }
-
-        if (
-            image == null || ocrBusy
-        ) {
+    private fun processImage(reader: ImageReader) {
+        val image = try { reader.acquireLatestImage() } catch (_: Exception) { null }
+        if (image == null || ocrBusy) {
             image?.close()
             return
         }
@@ -364,142 +204,83 @@ class ScreenCaptureService : Service() {
         ocrBusy = true
 
         try {
+            val plane = image.planes[0]
+            val buffer = plane.buffer
+            val pixelStride = plane.pixelStride
+            val rowStride = plane.rowStride
+            val rowPadding = rowStride - pixelStride * image.width
+            val bitmapWidth = image.width + rowPadding / pixelStride
 
-            val plane =
-                image.planes[0]
-
-            val buffer =
-                plane.buffer
-
-            val pixelStride =
-                plane.pixelStride
-
-            val rowStride =
-                plane.rowStride
-
-            val rowPadding =
-                rowStride -
-                    pixelStride *
-                    image.width
-
-            val bitmapWidth =
-                image.width +
-                    rowPadding /
-                    pixelStride
-
-            val bitmap =
-                Bitmap.createBitmap(
-                    bitmapWidth,
-                    image.height,
-                    Bitmap.Config.ARGB_8888
-                )
-
-            bitmap.copyPixelsFromBuffer(
-                buffer
+            val bitmap = Bitmap.createBitmap(
+                bitmapWidth, image.height, Bitmap.Config.ARGB_8888
             )
+            bitmap.copyPixelsFromBuffer(buffer)
+            image.close()
 
-            // OCR the full frame and a large center crop. The multiplier
-            // is usually central and becomes much easier to read when enlarged.
-            runOcr(bitmap, false)
-
+            // Use the central multiplier region first. This reduces memory and
+            // OCR load substantially and helps the monitor remain alive.
             val cropLeft = (bitmap.width * 0.08f).toInt().coerceAtLeast(0)
             val cropTop = (bitmap.height * 0.08f).toInt().coerceAtLeast(0)
             val cropRight = (bitmap.width * 0.92f).toInt().coerceAtMost(bitmap.width)
             val cropBottom = (bitmap.height * 0.72f).toInt().coerceAtMost(bitmap.height)
-            if (cropRight > cropLeft && cropBottom > cropTop) {
-                val crop = Bitmap.createBitmap(
-                    bitmap,
-                    cropLeft,
-                    cropTop,
-                    cropRight - cropLeft,
-                    cropBottom - cropTop
-                )
-                val enlarged = Bitmap.createScaledBitmap(
-                    crop,
-                    (crop.width * 1.8f).toInt().coerceAtLeast(1),
-                    (crop.height * 1.8f).toInt().coerceAtLeast(1),
-                    true
-                )
-                runOcr(enlarged, true)
+
+            if (cropRight <= cropLeft || cropBottom <= cropTop) {
+                bitmap.recycle()
+                finishOcr()
+                return
             }
 
-        } catch (e: Exception) {
-
-            sendDiagnosticThrottled(
-                "Image ERROR: ${e.message}"
+            val crop = Bitmap.createBitmap(
+                bitmap, cropLeft, cropTop,
+                cropRight - cropLeft, cropBottom - cropTop
             )
+            bitmap.recycle()
 
-        } finally {
+            val enlarged = Bitmap.createScaledBitmap(
+                crop,
+                (crop.width * 1.8f).toInt().coerceAtLeast(1),
+                (crop.height * 1.8f).toInt().coerceAtLeast(1),
+                true
+            )
+            crop.recycle()
 
-            image.close()
+            runOcr(enlarged, true)
+        } catch (e: Exception) {
+            try { image.close() } catch (_: Exception) {}
+            sendDiagnosticThrottled("Image ERROR: ${e.message}")
+            finishOcr()
         }
     }
 
-    private fun runOcr(
-        bitmap: Bitmap,
-        allowBareDecimal: Boolean
-    ) {
+    private fun runOcr(bitmap: Bitmap, allowBareDecimal: Boolean) {
+        val input = InputImage.fromBitmap(bitmap, 0)
 
-        val input =
-            InputImage.fromBitmap(
-                bitmap,
-                0
-            )
-
-        recognizer
-            .process(input)
+        recognizer.process(input)
             .addOnSuccessListener { result ->
+                try {
+                    val text = result.text
+                    if (text.isBlank()) {
+                        sendDiagnosticThrottled("No valid multiplier detected")
+                        return@addOnSuccessListener
+                    }
 
-                val text =
-                    result.text
-
-                if (text.isBlank()) {
-                    sendDiagnosticThrottled(
-                        "No valid multiplier detected"
-                    )
+                    sendDiagnosticThrottled("OCR RAW: $text")
+                    val multiplier = extractMultiplier(text, allowBareDecimal)
+                    if (multiplier != null) validateMultiplier(multiplier)
+                } finally {
+                    if (!bitmap.isRecycled) bitmap.recycle()
                     finishOcr()
-                    return@addOnSuccessListener
                 }
-
-                sendDiagnosticThrottled(
-                    "OCR RAW: $text"
-                )
-
-                val multiplier =
-                    extractMultiplier(
-                        text,
-                        allowBareDecimal
-                    )
-
-                if (
-                    multiplier != null
-                ) {
-
-                    validateMultiplier(
-                        multiplier
-                    )
-                }
-                finishOcr()
             }
             .addOnFailureListener { error ->
-
-                sendDiagnosticThrottled(
-                    "OCR ERROR: ${error.message}"
-                )
+                if (!bitmap.isRecycled) bitmap.recycle()
+                sendDiagnosticThrottled("OCR ERROR: ${error.message}")
                 finishOcr()
             }
     }
 
-    private fun extractMultiplier(
-        text: String,
-        allowBareDecimal: Boolean
-    ): Double? {
-
-        if (
-            text.isBlank()
-        ) {
-            return null
-        }
+    private fun extractMultiplier(text: String, allowBareDecimal: Boolean): Double? {
+        if (text.isBlank()) return null
 
         val normalized = text
             .replace('×', 'x')
@@ -511,25 +292,14 @@ class ScreenCaptureService : Service() {
             .replace('L', '1')
             .replace(',', '.')
 
-        // Primary form: Aviator normally renders values such as 1.25x.
-        val withX = Regex(
-            """(?<![\d.])(\d{1,5}(?:\.\d{1,4})?)\s*[xX]\b"""
-        )
-
+        val withX = Regex("""(?<![d.])(d{1,5}(?:.d{1,4})?)s*[xX]""")
         for (match in withX.findAll(normalized)) {
             val value = match.groupValues[1].toDoubleOrNull()
-            if (value != null && value.isFinite() && value in 1.0..10000.0) {
-                return value
-            }
+            if (value != null && value.isFinite() && value in 1.0..10000.0) return value
         }
 
-        // Some OCR engines drop the trailing x. Only accept a decimal with
-        // 1–4 fractional digits when the OCR text is short (typical of the
-        // cropped multiplier region), avoiding most UI-number false positives.
         if (allowBareDecimal && normalized.length <= 120) {
-            val bare = Regex(
-                """(?<![\d.])(\d{1,5}\.\d{1,4})(?![\d.])"""
-            )
+            val bare = Regex("""(?<![d.])(d{1,5}.d{1,4})(?![d.])""")
             val values = bare.findAll(normalized)
                 .mapNotNull { it.groupValues[1].toDoubleOrNull() }
                 .filter { it.isFinite() && it in 1.0..10000.0 }
@@ -544,87 +314,33 @@ class ScreenCaptureService : Service() {
         handler.post { ocrBusy = false }
     }
 
-    private fun validateMultiplier(
-        multiplier: Double
-    ) {
+    private fun validateMultiplier(multiplier: Double) {
+        if (!multiplier.isFinite() || multiplier < 1.00 || multiplier > 10000.0) return
 
-        if (
-            multiplier < 1.00 ||
-            multiplier > 10000.0
-        ) {
-            return
-        }
-
-        if (
-            !multiplier.isFinite()
-        ) {
-            return
-        }
-
-        if (
-            !pendingMultiplier.isNaN() &&
-            abs(
-                multiplier -
-                    pendingMultiplier
-            ) <= 0.01
-        ) {
-
+        if (!pendingMultiplier.isNaN() && abs(multiplier - pendingMultiplier) <= 0.01) {
             pendingCount++
-
         } else {
-
-            pendingMultiplier =
-                multiplier
-
-            pendingCount =
-                1
+            pendingMultiplier = multiplier
+            pendingCount = 1
         }
 
-        if (
-            pendingCount >= 2
-        ) {
-
-            val now =
-                System.currentTimeMillis()
-
-            if (
-                now -
-                    lastAcceptedTime >=
-                100L
-            ) {
-
-                lastAcceptedTime =
-                    now
-
-                handleMultiplier(
-                    pendingMultiplier
-                )
-
-                pendingCount =
-                    0
+        if (pendingCount >= 2) {
+            val now = System.currentTimeMillis()
+            if (now - lastAcceptedTime >= 100L) {
+                lastAcceptedTime = now
+                handleMultiplier(pendingMultiplier)
+                pendingCount = 0
             }
         }
     }
 
-    private fun handleMultiplier(
-        multiplier: Double
-    ) {
-        if (!lastDetected.isNaN() &&
-            abs(multiplier - lastDetected) < 0.001) {
-            return
-        }
+    private fun handleMultiplier(multiplier: Double) {
+        if (!lastDetected.isNaN() && abs(multiplier - lastDetected) < 0.001) return
 
         lastDetected = multiplier
         updateDetected(multiplier)
         sendLiveMultiplier(multiplier)
 
-        /*
-         * Round tracking:
-         * The animated live multiplier is telemetry only.
-         * A round enters the historical dataset only when a new low/start
-         * is validated after a rising peak. This prevents hundreds of OCR
-         * frames from becoming hundreds of fake "historical rounds".
-         */
         if (currentRoundPeak.isNaN()) {
             currentRoundPeak = multiplier
             lowAfterPeakCount = 0
@@ -632,85 +348,42 @@ class ScreenCaptureService : Service() {
             currentRoundPeak = maxOf(currentRoundPeak, multiplier)
             lowAfterPeakCount = 0
         } else {
-            val largeDrop =
-                multiplier <= 1.10 ||
-                multiplier <= currentRoundPeak * 0.82
-
-            if (largeDrop && currentRoundPeak >= 1.05) {
-                lowAfterPeakCount++
-            } else {
-                lowAfterPeakCount = 0
-            }
+            val largeDrop = multiplier <= 1.10 || multiplier <= currentRoundPeak * 0.82
+            if (largeDrop && currentRoundPeak >= 1.05) lowAfterPeakCount++ else lowAfterPeakCount = 0
 
             if (lowAfterPeakCount >= 2) {
-                val completed = currentRoundPeak
-                completeRound(completed)
-
+                completeRound(currentRoundPeak)
                 currentRoundPeak = multiplier
                 lowAfterPeakCount = 0
             }
         }
 
-        /*
-         * A prediction is based only on completed, validated rounds.
-         * No history means no estimate.
-         */
-        val prediction = calculatePrediction()
-        if (prediction != null) {
-            updatePrediction(prediction)
-        }
+        calculatePrediction()?.let { updatePrediction(it) }
     }
 
-    private fun completeRound(
-        multiplier: Double
-    ) {
-        if (!multiplier.isFinite() ||
-            multiplier < 1.0 ||
-            multiplier > 10000.0) {
-            return
-        }
-
-        // Reject duplicate completed values created by repeated OCR frames.
-        if (history.isNotEmpty() &&
-            abs(history.last() - multiplier) < 0.001) {
-            return
-        }
+    private fun completeRound(multiplier: Double) {
+        if (!multiplier.isFinite() || multiplier < 1.0 || multiplier > 10000.0) return
+        if (history.isNotEmpty() && abs(history.last() - multiplier) < 0.001) return
 
         history.add(multiplier)
-        if (history.size > 2000) {
-            history.removeAt(0)
-        }
-
+        if (history.size > 2000) history.removeAt(0)
         saveHistory()
-
         sendRoundCompleted(multiplier)
 
         updateStatus(
-            String.format(
-                Locale.US,
-                "ROUND SAVED %.2f× | history=%d",
-                multiplier,
-                history.size
-            )
+            String.format(Locale.US, "ROUND SAVED %.2f× | history=%d", multiplier, history.size)
         )
     }
 
-    private fun calculatePrediction(): PredictionEstimate? {
-        return predictionModel.estimate(history)
-    }
+    private fun calculatePrediction(): PredictionEstimate? = predictionModel.estimate(history)
 
     private fun loadHistory() {
         try {
-            val raw = preferences.getString(
-                "rounds",
-                "[]"
-            ) ?: "[]"
+            val raw = preferences.getString("rounds", "[]") ?: "[]"
             val array = JSONArray(raw)
             for (i in 0 until array.length()) {
                 val value = array.optDouble(i, Double.NaN)
-                if (value.isFinite() && value in 1.0..10000.0) {
-                    history.add(value)
-                }
+                if (value.isFinite() && value in 1.0..10000.0) history.add(value)
             }
             if (history.size > 2000) {
                 val trimmed = history.takeLast(2000)
@@ -725,513 +398,197 @@ class ScreenCaptureService : Service() {
     private fun saveHistory() {
         try {
             val array = JSONArray()
-            for (value in history) {
-                array.put(value)
-            }
-            preferences.edit()
-                .putString("rounds", array.toString())
-                .apply()
-        } catch (_: Exception) {
-        }
+            history.forEach { array.put(it) }
+            preferences.edit().putString("rounds", array.toString()).apply()
+        } catch (_: Exception) {}
     }
 
     private fun createFloatingDisplay() {
+        val container = LinearLayout(this)
+        container.orientation = LinearLayout.VERTICAL
+        container.setPadding(16, 12, 16, 12)
+        container.setBackgroundColor(Color.argb(225, 20, 20, 20))
 
-        val container =
-            LinearLayout(this)
+        statusTextView = TextView(this)
+        detectedTextView = TextView(this)
+        predictedTextView = TextView(this)
+        confidenceTextView = TextView(this)
 
-        container.orientation =
-            LinearLayout.VERTICAL
+        statusTextView?.text = "AVIATOR MONITOR"
+        detectedTextView?.text = "Detected: --"
+        predictedTextView?.text = "Next: —"
+        confidenceTextView?.text = "No estimate until 10 completed rounds"
 
-        container.setPadding(
-            16,
-            12,
-            16,
-            12
-        )
+        statusTextView?.setTextColor(Color.WHITE)
+        detectedTextView?.setTextColor(Color.WHITE)
+        predictedTextView?.setTextColor(Color.WHITE)
+        confidenceTextView?.setTextColor(Color.WHITE)
 
-        container.setBackgroundColor(
-            Color.argb(
-                225,
-                20,
-                20,
-                20
-            )
-        )
-
-        statusTextView =
-            TextView(this)
-
-        detectedTextView =
-            TextView(this)
-
-        predictedTextView =
-            TextView(this)
-
-        confidenceTextView =
-            TextView(this)
-
-        statusTextView?.text =
-            "AVIATOR MONITOR"
-
-        detectedTextView?.text =
-            "Detected: --"
-
-        predictedTextView?.text =
-            "Next: —"
-
-        confidenceTextView?.text =
-            "No estimate until 10 completed rounds"
-
-        statusTextView?.setTextColor(
-            Color.WHITE
-        )
-
-        detectedTextView?.setTextColor(
-            Color.WHITE
-        )
-
-        predictedTextView?.setTextColor(
-            Color.WHITE
-        )
-
-        container.addView(
-            statusTextView
-        )
-
-        container.addView(
-            detectedTextView
-        )
-
-        container.addView(
-            predictedTextView
-        )
-
-        container.addView(
-            confidenceTextView
-        )
+        container.addView(statusTextView)
+        container.addView(detectedTextView)
+        container.addView(predictedTextView)
+        container.addView(confidenceTextView)
 
         val windowType =
-            if (
-                Build.VERSION.SDK_INT >=
-                Build.VERSION_CODES.O
-            ) {
-
-                WindowManager.LayoutParams
-                    .TYPE_APPLICATION_OVERLAY
-
-            } else {
-
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else {
                 @Suppress("DEPRECATION")
-                WindowManager.LayoutParams
-                    .TYPE_PHONE
+                WindowManager.LayoutParams.TYPE_PHONE
             }
 
-        val params =
-            WindowManager.LayoutParams(
-                WindowManager.LayoutParams
-                    .WRAP_CONTENT,
-                WindowManager.LayoutParams
-                    .WRAP_CONTENT,
-                windowType,
-                WindowManager.LayoutParams
-                    .FLAG_NOT_FOCUSABLE,
-                PixelFormat.TRANSLUCENT
-            )
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            windowType,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        )
 
-        params.gravity =
-            Gravity.TOP or
-                Gravity.START
+        params.gravity = Gravity.TOP or Gravity.START
+        params.x = 20
+        params.y = 120
 
-        params.x =
-            20
+        var startX = 0
+        var startY = 0
+        var touchX = 0f
+        var touchY = 0f
 
-        params.y =
-            120
-
-        var startX =
-            0
-
-        var startY =
-            0
-
-        var touchX =
-            0f
-
-        var touchY =
-            0f
-
-        container.setOnTouchListener {
-                _: View,
-                event: MotionEvent ->
-
-            when (
-                event.action
-            ) {
-
+        container.setOnTouchListener { _, event ->
+            when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-
-                    startX =
-                        params.x
-
-                    startY =
-                        params.y
-
-                    touchX =
-                        event.rawX
-
-                    touchY =
-                        event.rawY
-
+                    startX = params.x
+                    startY = params.y
+                    touchX = event.rawX
+                    touchY = event.rawY
                     true
                 }
-
                 MotionEvent.ACTION_MOVE -> {
-
-                    params.x =
-                        startX +
-                            (
-                                event.rawX -
-                                    touchX
-                                ).toInt()
-
-                    params.y =
-                        startY +
-                            (
-                                event.rawY -
-                                    touchY
-                                ).toInt()
-
-                    try {
-
-                        windowManager
-                            .updateViewLayout(
-                                container,
-                                params
-                            )
-
-                    } catch (
-                        _: Exception
-                    ) {
-                    }
-
+                    params.x = startX + (event.rawX - touchX).toInt()
+                    params.y = startY + (event.rawY - touchY).toInt()
+                    try { windowManager.updateViewLayout(container, params) } catch (_: Exception) {}
                     true
                 }
-
                 else -> false
             }
         }
 
         try {
-
-            windowManager.addView(
-                container,
-                params
-            )
-
-            overlayView =
-                container
-
-        } catch (
-            e: Exception
-        ) {
-
-            sendDiagnostic(
-                "Overlay ERROR: ${e.message}"
-            )
+            windowManager.addView(container, params)
+            overlayView = container
+        } catch (e: Exception) {
+            sendDiagnostic("Overlay ERROR: ${e.message}")
         }
     }
 
-    private fun updateDetected(
-        multiplier: Double
-    ) {
-
+    private fun updateDetected(multiplier: Double) {
         handler.post {
-
-            detectedTextView?.text =
-                String.format(
-                    Locale.US,
-                    "Detected: %.2f×",
-                    multiplier
-                )
+            detectedTextView?.text = String.format(Locale.US, "Detected: %.2f×", multiplier)
         }
     }
 
-    private fun updatePrediction(
-        estimate: PredictionEstimate
-    ) {
-
+    private fun updatePrediction(estimate: PredictionEstimate) {
         handler.post {
-
-            predictedTextView?.text =
-                String.format(
-                    Locale.US,
-                    "Estimate: %.2f×",
-                    estimate.value
-                )
-
-            confidenceTextView?.text =
-                String.format(
-                    Locale.US,
-                    "Range %.2f–%.2f× | %.0f%% | n=%d | P≥2× %.0f%%",
-                    estimate.lower,
-                    estimate.upper,
-                    estimate.confidence,
-                    estimate.sampleSize,
-                    estimate.probabilityAbove2x
-                )
-
+            predictedTextView?.text = String.format(Locale.US, "Estimate: %.2f×", estimate.value)
+            confidenceTextView?.text = String.format(
+                Locale.US,
+                "Range %.2f–%.2f× | %.0f%% | n=%d | P≥2× %.0f%%",
+                estimate.lower, estimate.upper, estimate.confidence,
+                estimate.sampleSize, estimate.probabilityAbove2x
+            )
             sendPrediction(estimate)
         }
     }
 
-    private fun sendPrediction(
-        estimate: PredictionEstimate
-    ) {
-        sendBroadcast(
-            Intent(PREDICTION_ACTION).apply {
-                putExtra("value", estimate.value)
-                putExtra("lower", estimate.lower)
-                putExtra("upper", estimate.upper)
-                putExtra("confidence", estimate.confidence)
-                putExtra("sampleSize", estimate.sampleSize)
-            }
-        )
+    private fun sendPrediction(estimate: PredictionEstimate) {
+        sendBroadcast(Intent(PREDICTION_ACTION).apply {
+            putExtra("value", estimate.value)
+            putExtra("lower", estimate.lower)
+            putExtra("upper", estimate.upper)
+            putExtra("confidence", estimate.confidence)
+            putExtra("sampleSize", estimate.sampleSize)
+        })
     }
 
-    private fun updateStatus(
-        status: String
-    ) {
-
-        handler.post {
-
-            statusTextView?.text =
-                status
-        }
+    private fun updateStatus(status: String) {
+        handler.post { statusTextView?.text = status }
     }
 
-    private fun sendLiveMultiplier(
-        multiplier: Double
-    ) {
-
-        val intent =
-            Intent(
-                LIVE_MULTIPLIER_ACTION
-            ).apply {
-
-                putExtra(
-                    "multiplier",
-                    multiplier
-                )
-            }
-
-        sendBroadcast(
-            intent
-        )
+    private fun sendLiveMultiplier(multiplier: Double) {
+        sendBroadcast(Intent(LIVE_MULTIPLIER_ACTION).apply {
+            putExtra("multiplier", multiplier)
+        })
     }
 
-    private fun sendRoundCompleted(
-        multiplier: Double
-    ) {
-
-        val intent =
-            Intent(
-                ROUND_COMPLETED_ACTION
-            ).apply {
-
-                putExtra(
-                    "multiplier",
-                    multiplier
-                )
-            }
-
-        sendBroadcast(
-            intent
-        )
+    private fun sendRoundCompleted(multiplier: Double) {
+        sendBroadcast(Intent(ROUND_COMPLETED_ACTION).apply {
+            putExtra("multiplier", multiplier)
+        })
     }
 
-    private fun sendDiagnostic(
-        message: String
-    ) {
-
-        val intent =
-            Intent(
-                DIAGNOSTIC_ACTION
-            ).apply {
-
-                putExtra(
-                    "message",
-                    message
-                )
-            }
-
-        sendBroadcast(
-            intent
-        )
+    private fun sendDiagnostic(message: String) {
+        sendBroadcast(Intent(DIAGNOSTIC_ACTION).apply {
+            putExtra("message", message)
+        })
     }
 
-    private fun sendDiagnosticThrottled(
-        message: String
-    ) {
-
-        val now =
-            System.currentTimeMillis()
-
-        if (
-            now -
-                lastDiagnosticTime <
-            1000L
-        ) {
-            return
-        }
-
-        lastDiagnosticTime =
-            now
-
-        sendDiagnostic(
-            message
-        )
+    private fun sendDiagnosticThrottled(message: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastDiagnosticTime < 1000L) return
+        lastDiagnosticTime = now
+        sendDiagnostic(message)
     }
 
     private fun createNotificationChannel() {
-
-        if (
-            Build.VERSION.SDK_INT >=
-            Build.VERSION_CODES.O
-        ) {
-
-            val channel =
-                NotificationChannel(
-                    CHANNEL_ID,
-                    "Aviator Screen Monitor",
-                    NotificationManager
-                        .IMPORTANCE_LOW
-                )
-
-            val manager =
-                getSystemService(
-                    NotificationManager::class.java
-                )
-
-            manager.createNotificationChannel(
-                channel
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Aviator Screen Monitor",
+                NotificationManager.IMPORTANCE_LOW
             )
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
 
-    private fun createNotification():
-            Notification {
-
-        return NotificationCompat
-            .Builder(
-                this,
-                CHANNEL_ID
-            )
-            .setContentTitle(
-                "Aviator Predictor"
-            )
-            .setContentText(
-                "Screen monitoring is running"
-            )
-            .setSmallIcon(
-                android.R.drawable
-                    .ic_menu_view
-            )
-            .setOngoing(
-                true
-            )
+    private fun createNotification(): Notification =
+        NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Aviator Predictor")
+            .setContentText("Screen monitoring is running")
+            .setSmallIcon(android.R.drawable.ic_menu_view)
+            .setOngoing(true)
             .build()
-    }
 
     private fun stopCapture() {
+        try { imageReader?.setOnImageAvailableListener(null, null) } catch (_: Exception) {}
+        try { imageReader?.close() } catch (_: Exception) {}
+        try { virtualDisplay?.release() } catch (_: Exception) {}
+        try { mediaProjection?.stop() } catch (_: Exception) {}
 
-        try {
+        imageReader = null
+        virtualDisplay = null
+        mediaProjection = null
+        ocrBusy = false
+    }
 
-            imageReader
-                ?.setOnImageAvailableListener(
-                    null,
-                    null
-                )
-
-        } catch (
-            _: Exception
-        ) {
-        }
-
-        try {
-
-            imageReader?.close()
-
-        } catch (
-            _: Exception
-        ) {
-        }
-
-        try {
-
-            virtualDisplay?.release()
-
-        } catch (
-            _: Exception
-        ) {
-        }
-
-        try {
-
-            mediaProjection?.stop()
-
-        } catch (
-            _: Exception
-        ) {
-        }
-
-        imageReader =
-            null
-
-        virtualDisplay =
-            null
-
-        mediaProjection =
-            null
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Swiping the activity away must not stop the monitor.
+        // The explicit Stop button is the intended shutdown control.
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
-
+        serviceStopping = true
         stopCapture()
 
-        try {
-
-            recognizer.close()
-
-        } catch (
-            _: Exception
-        ) {
-        }
+        try { recognizer.close() } catch (_: Exception) {}
 
         try {
+            overlayView?.let { windowManager.removeView(it) }
+        } catch (_: Exception) {}
 
-            overlayView?.let { view ->
-
-                windowManager.removeView(
-                    view
-                )
-            }
-
-        } catch (
-            _: Exception
-        ) {
-        }
-
-        overlayView =
-            null
-
+        overlayView = null
         super.onDestroy()
     }
 
-    override fun onBind(
-        intent: Intent?
-    ): IBinder? {
-
-        return null
-    }
+    override fun onBind(intent: Intent?): IBinder? = null
 }
