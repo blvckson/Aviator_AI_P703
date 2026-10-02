@@ -86,6 +86,13 @@ class ScreenCaptureService : Service() {
     private var lastAcceptedTime = 0L
     private var serviceStopping = false
 
+    // Aviator live-round state: the multiplier rises while the plane is flying.
+    // A round is finalized by the "flew away" state and its final multiplier.
+    private var roundActive = false
+    private var roundFinalized = false
+    private var lastLiveMultiplier = Double.NaN
+    private var lastFinalMultiplier = Double.NaN
+
     override fun onCreate() {
         super.onCreate()
 
@@ -264,9 +271,29 @@ class ScreenCaptureService : Service() {
                         return@addOnSuccessListener
                     }
 
+                    // Use the richer ML Kit hierarchy as well as the flat OCR text.
+                    // This catches the live number even when punctuation/spaces are
+                    // split across OCR lines or elements.
+                    val ocrParts = buildString {
+                        append(text)
+                        for (block in result.textBlocks) {
+                            for (line in block.lines) {
+                                append('\n').append(line.text)
+                                for (element in line.elements) {
+                                    append(' ').append(element.text)
+                                }
+                            }
+                        }
+                    }
+
                     sendDiagnosticThrottled("OCR RAW: $text")
-                    val multiplier = extractMultiplier(text, allowBareDecimal)
-                    if (multiplier != null) validateMultiplier(multiplier)
+                    val finalState = containsFlewAway(ocrParts)
+                    val multiplier = extractMultiplier(ocrParts, allowBareDecimal)
+
+                    if (finalState && multiplier != null) {
+                        finalizeDetectedRound(multiplier)
+                    } else if (multiplier != null) {
+                        validateMultiplier(multiplier)
                 } finally {
                     if (!bitmap.isRecycled) bitmap.recycle()
                     finishOcr()
@@ -279,10 +306,24 @@ class ScreenCaptureService : Service() {
             }
     }
 
+    private fun containsFlewAway(text: String): Boolean {
+        val normalized = text
+            .lowercase(Locale.US)
+            .replace('0', 'o')
+            .replace('1', 'l')
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        return normalized.contains("flew away") ||
+            normalized.contains("flewaway") ||
+            normalized.contains("flew  away") ||
+            normalized.contains("flew awa")
+    }
+
     private fun extractMultiplier(text: String, allowBareDecimal: Boolean): Double? {
         if (text.isBlank()) return null
 
-        val normalized = text
+        val source = text
             .replace('×', 'x')
             .replace('X', 'x')
             .replace('O', '0')
@@ -290,24 +331,52 @@ class ScreenCaptureService : Service() {
             .replace('I', '1')
             .replace('l', '1')
             .replace('L', '1')
-            .replace(',', '.')
+            .replace(Regex("[^0-9xX.,\\s]"), " ")
 
-        val withX = Regex("""(?<![\\d.])(\\d{1,5}(?:\\.\\d{1,4})?)\\s*[xX]\\b""")
-        for (match in withX.findAll(normalized)) {
-            val value = match.groupValues[1].toDoubleOrNull()
-            if (value != null && value.isFinite() && value in 1.0..10000.0) return value
+        // Prefer values explicitly followed by x. Supports ordinary decimals,
+        // OCR-spaced values and large grouped values such as 1,000,000x.
+        val withX = Regex(
+            """(?<![\\d.])((?:\\d{1,3}(?:[,\\s]\\d{3})+|\\d{1,12})(?:[.]\\d{1,6})?)\\s*[xX]\\b"""
+        )
+
+        for (match in withX.findAll(source)) {
+            val raw = match.groupValues[1]
+            val normalized = normalizeNumericToken(raw)
+            val value = normalized.toDoubleOrNull()
+            if (value != null && value.isFinite() && value >= 1.0 && value <= 1.0e12) {
+                return value
+            }
         }
 
-        if (allowBareDecimal && normalized.length <= 120) {
-            val bare = Regex("""(?<![\\d.])(\\d{1,5}\\.\\d{1,4})(?![\\d.])""")
-            val values = bare.findAll(normalized)
-                .mapNotNull { it.groupValues[1].toDoubleOrNull() }
-                .filter { it.isFinite() && it in 1.0..10000.0 }
+        if (allowBareDecimal) {
+            val bare = Regex(
+                """(?<![\\d.])(\\d{1,12}\\.\\d{1,6})(?![\\d.])"""
+            )
+            val values = bare.findAll(source)
+                .mapNotNull { normalizeNumericToken(it.groupValues[1]).toDoubleOrNull() }
+                .filter { it.isFinite() && it >= 1.0 && it <= 1.0e12 }
                 .toList()
+
             if (values.size == 1) return values[0]
         }
 
         return null
+    }
+
+    private fun normalizeNumericToken(raw: String): String {
+        val token = raw.trim()
+
+        // Comma/space groups such as 1,000,000 or 1 000 000.
+        if (Regex("""^\\d{1,3}(?:[,\\s]\\d{3})+$""").matches(token)) {
+            return token.replace(",", "").replace(" ", "")
+        }
+
+        // OCR sometimes uses a comma as the decimal separator.
+        if (token.count { it == ',' } == 1 && !token.contains(" ")) {
+            return token.replace(',', '.')
+        }
+
+        return token.replace(" ", "")
     }
 
     private fun finishOcr() {
@@ -315,55 +384,107 @@ class ScreenCaptureService : Service() {
     }
 
     private fun validateMultiplier(multiplier: Double) {
-        if (!multiplier.isFinite() || multiplier < 1.00 || multiplier > 10000.0) return
+        if (!multiplier.isFinite() || multiplier < 1.00 || multiplier > 1.0e12) return
 
-        if (!pendingMultiplier.isNaN() && abs(multiplier - pendingMultiplier) <= 0.01) {
-            pendingCount++
-        } else {
-            pendingMultiplier = multiplier
-            pendingCount = 1
+        // The live multiplier should not be forced to repeat across two OCR
+        // frames: it changes rapidly (1.00x, 1.01x, 1.02x ...). Accept a new
+        // value immediately when it is consistent with the current rising round.
+        if (!roundActive) {
+            startLiveRound(multiplier)
+            return
         }
 
-        if (pendingCount >= 2) {
-            val now = System.currentTimeMillis()
-            if (now - lastAcceptedTime >= 100L) {
-                lastAcceptedTime = now
-                handleMultiplier(pendingMultiplier)
-                pendingCount = 0
-            }
+        // Ignore an isolated OCR false-positive that jumps backwards materially.
+        // The actual game multiplier does not decrease while the plane is flying.
+        if (!lastLiveMultiplier.isNaN() &&
+            multiplier + 0.10 < lastLiveMultiplier) {
+            sendDiagnosticThrottled(
+                String.format(Locale.US, "Ignored backward OCR %.2f×", multiplier)
+            )
+            return
         }
-    }
 
-    private fun handleMultiplier(multiplier: Double) {
-        if (!lastDetected.isNaN() && abs(multiplier - lastDetected) < 0.001) return
+        val now = System.currentTimeMillis()
+        if (now - lastAcceptedTime < 35L &&
+            !lastLiveMultiplier.isNaN() &&
+            abs(multiplier - lastLiveMultiplier) < 0.001) {
+            return
+        }
 
+        lastAcceptedTime = now
+        lastLiveMultiplier = multiplier
+        currentRoundPeak = maxOf(
+            if (currentRoundPeak.isNaN()) multiplier else currentRoundPeak,
+            multiplier
+        )
+        lowAfterPeakCount = 0
         lastDetected = multiplier
+
         updateDetected(multiplier)
         sendLiveMultiplier(multiplier)
 
-        if (currentRoundPeak.isNaN()) {
-            currentRoundPeak = multiplier
-            lowAfterPeakCount = 0
-        } else if (multiplier >= currentRoundPeak - 0.01) {
-            currentRoundPeak = maxOf(currentRoundPeak, multiplier)
-            lowAfterPeakCount = 0
-        } else {
-            val largeDrop = multiplier <= 1.10 || multiplier <= currentRoundPeak * 0.82
-            if (largeDrop && currentRoundPeak >= 1.05) lowAfterPeakCount++ else lowAfterPeakCount = 0
-
-            if (lowAfterPeakCount >= 2) {
-                completeRound(currentRoundPeak)
-                currentRoundPeak = multiplier
-                lowAfterPeakCount = 0
-            }
-        }
-
+        // Prediction is based only on completed rounds. The current live
+        // multiplier is never added to the historical dataset prematurely.
         calculatePrediction()?.let { updatePrediction(it) }
     }
 
+    private fun startLiveRound(multiplier: Double) {
+        roundActive = true
+        roundFinalized = false
+        lastFinalMultiplier = Double.NaN
+        lastLiveMultiplier = multiplier
+        currentRoundPeak = multiplier
+        lowAfterPeakCount = 0
+        lastDetected = multiplier
+
+        updateDetected(multiplier)
+        updateStatus(String.format(Locale.US, "FLYING %.2f×", multiplier))
+        sendLiveMultiplier(multiplier)
+        calculatePrediction()?.let { updatePrediction(it) }
+    }
+
+    private fun finalizeDetectedRound(multiplier: Double) {
+        if (!multiplier.isFinite() || multiplier < 1.0 || multiplier > 1.0e12) return
+
+        // Do not save the same final OCR result repeatedly while "flew away"
+        // remains on screen.
+        if (roundFinalized &&
+            !lastFinalMultiplier.isNaN() &&
+            abs(lastFinalMultiplier - multiplier) < 0.001) {
+            return
+        }
+
+        if (!roundActive) {
+            // A 1.00x crash can be so fast that the first useful OCR frame is
+            // already the final "flew away" screen.
+            roundActive = true
+            lastLiveMultiplier = multiplier
+            currentRoundPeak = multiplier
+        }
+
+        roundFinalized = true
+        lastFinalMultiplier = multiplier
+        lastLiveMultiplier = multiplier
+        currentRoundPeak = multiplier
+        lastDetected = multiplier
+
+        updateDetected(multiplier)
+        updateStatus(
+            String.format(Locale.US, "FLEW AWAY %.2f× — ROUND COMPLETE", multiplier)
+        )
+        completeRound(multiplier)
+
+        roundActive = false
+        roundFinalized = true
+        currentRoundPeak = Double.NaN
+        lowAfterPeakCount = 0
+        pendingMultiplier = Double.NaN
+        pendingCount = 0
+        lastLiveMultiplier = Double.NaN
+    }
+
     private fun completeRound(multiplier: Double) {
-        if (!multiplier.isFinite() || multiplier < 1.0 || multiplier > 10000.0) return
-        if (history.isNotEmpty() && abs(history.last() - multiplier) < 0.001) return
+        if (!multiplier.isFinite() || multiplier < 1.0 || multiplier > 1.0e12) return
 
         history.add(multiplier)
         if (history.size > 2000) history.removeAt(0)
@@ -373,6 +494,7 @@ class ScreenCaptureService : Service() {
         updateStatus(
             String.format(Locale.US, "ROUND SAVED %.2f× | history=%d", multiplier, history.size)
         )
+        calculatePrediction()?.let { updatePrediction(it) }
     }
 
     private fun calculatePrediction(): PredictionEstimate? = predictionModel.estimate(history)
