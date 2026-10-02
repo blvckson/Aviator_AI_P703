@@ -337,7 +337,7 @@ class ScreenCaptureService : Service() {
         // Prefer values explicitly followed by x. Supports ordinary decimals,
         // OCR-spaced values and large grouped values such as 1,000,000x.
         val withX = Regex(
-            """(?<![\\d.])((?:\\d{1,3}(?:[,\\s]\\d{3})+|\\d{1,100})(?:[.]\\d{1,100})?)\\s*[xX]\\b"""
+            """(?<![\\d.])((?:\\d{1,3}(?:[,\\s]\\d{3})+|\\d+)(?:[.]\\d{1,100})?)\\s*[xX]\\b"""
         )
 
         for (match in withX.findAll(source)) {
@@ -351,7 +351,7 @@ class ScreenCaptureService : Service() {
 
         if (allowBareDecimal) {
             val bare = Regex(
-                """(?<![\\d.])(\\d{1,100}\\.\\d{1,100})(?![\\d.])"""
+                """(?<![\\d.])(\\d+\\.\\d+)(?![\\d.])"""
             )
             val values = bare.findAll(source)
                 .mapNotNull { normalizeNumericToken(it.groupValues[1]).toDoubleOrNull() }
