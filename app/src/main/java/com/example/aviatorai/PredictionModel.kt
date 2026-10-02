@@ -37,7 +37,7 @@ class PredictionModel {
 
     fun estimate(data: List<Double>): PredictionEstimate? {
         val clean = data
-            .filter { it.isFinite() && it >= 1.0 && it <= 1.0e12 }
+            .filter { it.isFinite() && it >= 1.0 && it <= Double.MAX_VALUE }
             .takeLast(2000)
 
         if (clean.size < 10) return null
@@ -70,7 +70,7 @@ class PredictionModel {
         val tail = extremeTailAdjustment(clean)
         posteriorLog += tail
 
-        val point = exp(posteriorLog).coerceIn(1.01, 1.0e12)
+        val point = exp(posteriorLog).coerceIn(1.01, Double.MAX_VALUE)
 
         val rng = Random(0x51A71 + clean.size)
         val simulations = ArrayList<Double>(4000)
@@ -90,7 +90,7 @@ class PredictionModel {
                 posteriorLog +
                 bootstrapResidual * 0.45 +
                 jitter
-            simulations.add(exp(simulatedLog).coerceIn(1.0, 1.0e12))
+            simulations.add(exp(simulatedLog).coerceIn(1.0, Double.MAX_VALUE))
         }
 
         simulations.sort()
