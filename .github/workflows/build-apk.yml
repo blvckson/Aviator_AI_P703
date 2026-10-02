@@ -34,3 +34,5 @@ jobs:
         with:
           name: aviator-ai-p703-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+
+# Final verification build trigger
