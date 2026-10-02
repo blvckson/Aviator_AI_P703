@@ -604,7 +604,10 @@ class ScreenCaptureService : Service() {
         }
     }
 
-    private fun formatMultiplier(multiplier: Double): String =\n        if (multiplier.isFinite()) String.format(Locale.US, "%.2f", multiplier) else "overflow"\n\n    private fun updateDetected(multiplier: Double) {
+    private fun formatMultiplier(multiplier: Double): String =
+        if (multiplier.isFinite()) String.format(Locale.US, "%.2f", multiplier) else "overflow"
+
+    private fun updateDetected(multiplier: Double) {
         handler.post {
             detectedTextView?.text = formatMultiplier(multiplier)
         }
