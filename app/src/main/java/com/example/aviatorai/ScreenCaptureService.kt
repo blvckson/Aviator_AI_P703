@@ -205,16 +205,16 @@ class ScreenCaptureService : Service() {
          * setProjectionData() before starting
          * this service.
          */
-        val resultCode =
-            projectionResultCode
+        val resultCode = intent?.getIntExtra("projection_result_code", -1) ?: -1
 
-        val data =
-            projectionData
+        val data = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent?.getParcelableExtra("projection_data", Intent::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent?.getParcelableExtra("projection_data")
+        }
 
-        if (
-            resultCode == -1 ||
-            data == null
-        ) {
+        if (resultCode == -1 || data == null) {
 
             sendDiagnostic(
                 "ERROR: Screen capture permission data missing"
