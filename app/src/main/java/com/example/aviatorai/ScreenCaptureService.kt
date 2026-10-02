@@ -1,5 +1,6 @@
 package com.example.aviatorai
 
+import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -214,7 +215,7 @@ class ScreenCaptureService : Service() {
             intent?.getParcelableExtra("projection_data")
         }
 
-        if (resultCode == -1 || data == null) {
+        if (resultCode != Activity.RESULT_OK || data == null) {
 
             sendDiagnostic(
                 "ERROR: Screen capture permission data missing"
