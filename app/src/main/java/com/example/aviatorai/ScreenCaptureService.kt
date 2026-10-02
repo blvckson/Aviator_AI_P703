@@ -36,6 +36,7 @@ import java.util.Locale
 import kotlin.math.abs
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.ArrayDeque
 
 class ScreenCaptureService : Service() {
 
@@ -85,7 +86,7 @@ class ScreenCaptureService : Service() {
     private var lastRoundValue = Double.NaN
     private var lastDiagnosticTime = 0L
     private var ocrBusy = false
-    private var pendingMultiplier = Double.NaN
+    // OCR is asynchronous and can take longer than the screen frame rate.\n    // Keep a short rolling frame queue instead of silently dropping every\n    // frame that arrives while OCR is busy.\n    private val pendingOcrFrames = ArrayDeque<Bitmap>()\n    private val maxPendingOcrFrames = 6\n    private var pendingMultiplier = Double.NaN
     private var pendingCount = 0
     private var lastAcceptedTime = 0L
     private var serviceStopping = false
@@ -207,12 +208,7 @@ class ScreenCaptureService : Service() {
 
     private fun processImage(reader: ImageReader) {
         val image = try { reader.acquireLatestImage() } catch (_: Exception) { null }
-        if (image == null || ocrBusy) {
-            image?.close()
-            return
-        }
-
-        ocrBusy = true
+        if (image == null) return
 
         try {
             val plane = image.planes[0]
@@ -255,7 +251,7 @@ class ScreenCaptureService : Service() {
             )
             crop.recycle()
 
-            runOcr(enlarged, true)
+            enqueueOcrFrame(enlarged)
         } catch (e: Exception) {
             try { image.close() } catch (_: Exception) {}
             sendDiagnosticThrottled("Image ERROR: ${e.message}")
@@ -392,8 +388,37 @@ class ScreenCaptureService : Service() {
         return token.replace(" ", "")
     }
 
+    private fun enqueueOcrFrame(bitmap: Bitmap) {
+        handler.post {
+            if (serviceStopping) {
+                if (!bitmap.isRecycled) bitmap.recycle()
+                return@post
+            }
+
+            // Preserve the newest frames. Old frames are less useful than the
+            // frames closest to a round transition.
+            while (pendingOcrFrames.size >= maxPendingOcrFrames) {
+                val old = pendingOcrFrames.removeFirst()
+                if (!old.isRecycled) old.recycle()
+            }
+            pendingOcrFrames.addLast(bitmap)
+            drainOcrQueue()
+        }
+    }
+
+    private fun drainOcrQueue() {
+        if (serviceStopping || ocrBusy || pendingOcrFrames.isEmpty()) return
+
+        ocrBusy = true
+        val next = pendingOcrFrames.removeFirst()
+        runOcr(next, true)
+    }
+
     private fun finishOcr() {
-        handler.post { ocrBusy = false }
+        handler.post {
+            ocrBusy = false
+            drainOcrQueue()
+        }
     }
 
     private fun validateMultiplier(multiplier: Double) {
@@ -407,12 +432,22 @@ class ScreenCaptureService : Service() {
             return
         }
 
-        // Ignore an isolated OCR false-positive that jumps backwards materially.
-        // The actual game multiplier does not decrease while the plane is flying.
+        // A genuine round cannot move backwards. A sharp return toward
+        // 1.00x, however, is also a useful fallback round-boundary signal when
+        // OCR misses the "flew away" text. Use two confirming low readings before
+        // finalizing the last validated value, preventing a single OCR glitch
+        // from creating a false round.
         if (!lastLiveMultiplier.isNaN() &&
             multiplier + 0.10 < lastLiveMultiplier) {
+            if (lastLiveMultiplier >= 1.01 && multiplier <= 1.10) {
+                lowAfterPeakCount++
+                if (lowAfterPeakCount >= 2) {
+                    finalizeDetectedRound(lastLiveMultiplier)
+                    return
+                }
+            }
             sendDiagnosticThrottled(
-                String.format(Locale.US, "Ignored backward OCR %.2f×", multiplier)
+                String.format(Locale.US, "Backward OCR ignored %.2f×", multiplier)
             )
             return
         }
@@ -721,6 +756,10 @@ class ScreenCaptureService : Service() {
         stopCapture()
 
         try { recognizer.close() } catch (_: Exception) {}
+        while (pendingOcrFrames.isNotEmpty()) {
+            val frame = pendingOcrFrames.removeFirst()
+            try { if (!frame.isRecycled) frame.recycle() } catch (_: Exception) {}
+        }
         try { predictionExecutor.shutdownNow() } catch (_: Exception) {}
 
         try {
