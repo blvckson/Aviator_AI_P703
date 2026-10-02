@@ -86,7 +86,12 @@ class ScreenCaptureService : Service() {
     private var lastRoundValue = Double.NaN
     private var lastDiagnosticTime = 0L
     private var ocrBusy = false
-    // OCR is asynchronous and can take longer than the screen frame rate.\n    // Keep a short rolling frame queue instead of silently dropping every\n    // frame that arrives while OCR is busy.\n    private val pendingOcrFrames = ArrayDeque<Bitmap>()\n    private val maxPendingOcrFrames = 6\n    private var pendingMultiplier = Double.NaN
+    // OCR is asynchronous and can take longer than the screen frame rate.
+    // Keep a short rolling frame queue instead of silently dropping every
+    // frame that arrives while OCR is busy.
+    private val pendingOcrFrames = ArrayDeque<Bitmap>()
+    private val maxPendingOcrFrames = 6
+    private var pendingMultiplier = Double.NaN
     private var pendingCount = 0
     private var lastAcceptedTime = 0L
     private var serviceStopping = false
