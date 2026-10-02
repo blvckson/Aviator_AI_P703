@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+      - format-a-stable-ocr
+      - format-b-advanced-math
 
 jobs:
   build:
