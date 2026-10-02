@@ -154,6 +154,8 @@ class ScreenCaptureService : Service() {
     private var lastDiagnosticTime =
         0L
 
+    private var ocrBusy = false
+
     /*
      * Detection validation state.
      */
@@ -353,10 +355,13 @@ class ScreenCaptureService : Service() {
             }
 
         if (
-            image == null
+            image == null || ocrBusy
         ) {
+            image?.close()
             return
         }
+
+        ocrBusy = true
 
         try {
 
@@ -452,6 +457,7 @@ class ScreenCaptureService : Service() {
                     sendDiagnosticThrottled(
                         "No valid multiplier detected"
                     )
+                    finishOcr()
                     return@addOnSuccessListener
                 }
 
@@ -473,12 +479,14 @@ class ScreenCaptureService : Service() {
                         multiplier
                     )
                 }
+                finishOcr()
             }
             .addOnFailureListener { error ->
 
                 sendDiagnosticThrottled(
                     "OCR ERROR: ${error.message}"
                 )
+                finishOcr()
             }
     }
 
@@ -505,7 +513,7 @@ class ScreenCaptureService : Service() {
 
         // Primary form: Aviator normally renders values such as 1.25x.
         val withX = Regex(
-            """(?<![\\d.])(\\d{1,5}(?:\\.\\d{1,4})?)\\s*[xX]\\b"""
+            """(?<![\d.])(\d{1,5}(?:\.\d{1,4})?)\s*[xX]\b"""
         )
 
         for (match in withX.findAll(normalized)) {
@@ -520,7 +528,7 @@ class ScreenCaptureService : Service() {
         // cropped multiplier region), avoiding most UI-number false positives.
         if (allowBareDecimal && normalized.length <= 120) {
             val bare = Regex(
-                """(?<![\\d.])(\\d{1,5}\\.\\d{1,4})(?![\\d.])"""
+                """(?<![\d.])(\d{1,5}\.\d{1,4})(?![\d.])"""
             )
             val values = bare.findAll(normalized)
                 .mapNotNull { it.groupValues[1].toDoubleOrNull() }
@@ -530,6 +538,10 @@ class ScreenCaptureService : Service() {
         }
 
         return null
+    }
+
+    private fun finishOcr() {
+        handler.post { ocrBusy = false }
     }
 
     private fun validateMultiplier(
