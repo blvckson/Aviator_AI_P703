@@ -172,7 +172,7 @@ class PredictionModel {
             ModelType.ROBUST_TREND -> robustTrend(logs)
             ModelType.HARMONIC -> harmonicRegression(logs)
         }.coerceIn(
-            max(0.0, logs.minOrNull() ?: 0.0 - 2.0),
+            (logs.minOrNull() ?: 0.0) - 2.0,
             (logs.maxOrNull() ?: 0.0) + 2.0
         )
     }
@@ -277,7 +277,10 @@ class PredictionModel {
     ): DoubleArray? {
         val n = bInput.size
         val a = Array(n) { i ->
-            input[i].clone() + doubleArrayOf(bInput[i])
+            DoubleArray(n + 1).also { row ->
+                for (j in 0 until n) row[j] = input[i][j]
+                row[n] = bInput[i]
+            }
         }
 
         for (col in 0 until n) {
