@@ -189,8 +189,6 @@ override fun onCreate(
             )
         )
 
-        ScreenCaptureService.clearProjectionData()
-
         statusText.text =
             "Monitor stopped"
 
@@ -324,16 +322,14 @@ override fun onActivityResult(
      * We do NOT place the permission Intent
      * inside another Intent.
      */
-    ScreenCaptureService.setProjectionData(
-        resultCode,
-        data
-    )
-
     val serviceIntent =
         Intent(
             this,
             ScreenCaptureService::class.java
-        )
+        ).apply {
+            putExtra("projection_result_code", resultCode)
+            putExtra("projection_data", data)
+        }
 
     try {
 
@@ -357,8 +353,6 @@ override fun onActivityResult(
             "Screen monitor running"
 
     } catch (e: Exception) {
-
-        ScreenCaptureService.clearProjectionData()
 
         statusText.text =
             "ERROR starting monitor: ${e.message}"
