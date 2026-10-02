@@ -1,0 +1,1 @@
+Format A: existing prediction model preserved; OCR/history capture and prediction display latency fixes only. Built 2026-10-02.
