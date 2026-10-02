@@ -292,14 +292,14 @@ class ScreenCaptureService : Service() {
             .replace('L', '1')
             .replace(',', '.')
 
-        val withX = Regex("""(?<![d.])(d{1,5}(?:.d{1,4})?)s*[xX]""")
+        val withX = Regex("""(?<![\\d.])(\\d{1,5}(?:\\.\\d{1,4})?)\\s*[xX]\\b""")
         for (match in withX.findAll(normalized)) {
             val value = match.groupValues[1].toDoubleOrNull()
             if (value != null && value.isFinite() && value in 1.0..10000.0) return value
         }
 
         if (allowBareDecimal && normalized.length <= 120) {
-            val bare = Regex("""(?<![d.])(d{1,5}.d{1,4})(?![d.])""")
+            val bare = Regex("""(?<![\\d.])(\\d{1,5}\\.\\d{1,4})(?![\\d.])""")
             val values = bare.findAll(normalized)
                 .mapNotNull { it.groupValues[1].toDoubleOrNull() }
                 .filter { it.isFinite() && it in 1.0..10000.0 }
