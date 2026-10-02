@@ -294,6 +294,7 @@ class ScreenCaptureService : Service() {
                         finalizeDetectedRound(multiplier)
                     } else if (multiplier != null) {
                         validateMultiplier(multiplier)
+                    }
                 } finally {
                     if (!bitmap.isRecycled) bitmap.recycle()
                     finishOcr()
@@ -336,7 +337,7 @@ class ScreenCaptureService : Service() {
         // Prefer values explicitly followed by x. Supports ordinary decimals,
         // OCR-spaced values and large grouped values such as 1,000,000x.
         val withX = Regex(
-            """(?<![\\d.])((?:\\d{1,3}(?:[,\\s]\\d{3})+|\\d{1,12})(?:[.]\\d{1,6})?)\\s*[xX]\\b"""
+            """(?<![\\d.])((?:\\d{1,3}(?:[,\\s]\\d{3})+|\\d{1,100})(?:[.]\\d{1,100})?)\\s*[xX]\\b"""
         )
 
         for (match in withX.findAll(source)) {
@@ -350,7 +351,7 @@ class ScreenCaptureService : Service() {
 
         if (allowBareDecimal) {
             val bare = Regex(
-                """(?<![\\d.])(\\d{1,12}\\.\\d{1,6})(?![\\d.])"""
+                """(?<![\\d.])(\\d{1,100}\\.\\d{1,100})(?![\\d.])"""
             )
             val values = bare.findAll(source)
                 .mapNotNull { normalizeNumericToken(it.groupValues[1]).toDoubleOrNull() }
@@ -384,7 +385,7 @@ class ScreenCaptureService : Service() {
     }
 
     private fun validateMultiplier(multiplier: Double) {
-        if (!multiplier.isFinite() || multiplier < 1.00 || multiplier > 1.0e12) return
+        if (!multiplier.isFinite() || multiplier < 1.00 || multiplier > Double.MAX_VALUE) return
 
         // The live multiplier should not be forced to repeat across two OCR
         // frames: it changes rapidly (1.00x, 1.01x, 1.02x ...). Accept a new
@@ -444,7 +445,7 @@ class ScreenCaptureService : Service() {
     }
 
     private fun finalizeDetectedRound(multiplier: Double) {
-        if (!multiplier.isFinite() || multiplier < 1.0 || multiplier > 1.0e12) return
+        if (!multiplier.isFinite() || multiplier < 1.0 || multiplier > Double.MAX_VALUE) return
 
         // Do not save the same final OCR result repeatedly while "flew away"
         // remains on screen.
@@ -484,7 +485,7 @@ class ScreenCaptureService : Service() {
     }
 
     private fun completeRound(multiplier: Double) {
-        if (!multiplier.isFinite() || multiplier < 1.0 || multiplier > 1.0e12) return
+        if (!multiplier.isFinite() || multiplier < 1.0 || multiplier > Double.MAX_VALUE) return
 
         history.add(multiplier)
         if (history.size > 2000) history.removeAt(0)
