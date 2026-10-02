@@ -337,7 +337,7 @@ class ScreenCaptureService : Service() {
         // Prefer values explicitly followed by x. Supports ordinary decimals,
         // OCR-spaced values and large grouped values such as 1,000,000x.
         val withX = Regex(
-            """(?<![\\d.])((?:\\d{1,3}(?:[,\\s]\\d{3})+|\\d+)(?:[.]\\d{1,100})?)\\s*[xX]\\b"""
+            """(?<![\d.])((?:\d{1,3}(?:[,\s]\d{3})+|\d+)(?:[.]\d{1,100})?)\s*[xX]\b"""
         )
 
         for (match in withX.findAll(source)) {
@@ -351,11 +351,11 @@ class ScreenCaptureService : Service() {
 
         if (allowBareDecimal) {
             val bare = Regex(
-                """(?<![\\d.])(\\d+\\.\\d+)(?![\\d.])"""
+                """(?<![\d.])(\d+\.\d+)(?![\d.])"""
             )
             val values = bare.findAll(source)
                 .mapNotNull { normalizeNumericToken(it.groupValues[1]).toDoubleOrNull() }
-                .filter { it.isFinite() && it >= 1.0 && it <= 1.0e12 }
+                .filter { it.isFinite() && it >= 1.0 && it <= Double.MAX_VALUE }
                 .toList()
 
             if (values.size == 1) return values[0]
@@ -439,7 +439,7 @@ class ScreenCaptureService : Service() {
         lastDetected = multiplier
 
         updateDetected(multiplier)
-        updateStatus(String.format(Locale.US, "FLYING %.2f×", multiplier))
+        updateStatus("FLYING " + formatMultiplier(multiplier))
         sendLiveMultiplier(multiplier)
         calculatePrediction()?.let { updatePrediction(it) }
     }
@@ -471,7 +471,7 @@ class ScreenCaptureService : Service() {
 
         updateDetected(multiplier)
         updateStatus(
-            String.format(Locale.US, "FLEW AWAY %.2f× — ROUND COMPLETE", multiplier)
+            "FLEW AWAY " + formatMultiplier(multiplier) + " — ROUND COMPLETE"
         )
         completeRound(multiplier)
 
@@ -493,7 +493,7 @@ class ScreenCaptureService : Service() {
         sendRoundCompleted(multiplier)
 
         updateStatus(
-            String.format(Locale.US, "ROUND SAVED %.2f× | history=%d", multiplier, history.size)
+            "ROUND SAVED " + formatMultiplier(multiplier) + " | history=" + history.size
         )
         calculatePrediction()?.let { updatePrediction(it) }
     }
@@ -506,7 +506,7 @@ class ScreenCaptureService : Service() {
             val array = JSONArray(raw)
             for (i in 0 until array.length()) {
                 val value = array.optDouble(i, Double.NaN)
-                if (value.isFinite() && value in 1.0..10000.0) history.add(value)
+                if (value.isFinite() && value >= 1.0) history.add(value)
             }
             if (history.size > 2000) {
                 val trimmed = history.takeLast(2000)
@@ -604,9 +604,9 @@ class ScreenCaptureService : Service() {
         }
     }
 
-    private fun updateDetected(multiplier: Double) {
+    private fun formatMultiplier(multiplier: Double): String =\n        if (multiplier.isFinite()) String.format(Locale.US, "%.2f", multiplier) else "overflow"\n\n    private fun updateDetected(multiplier: Double) {
         handler.post {
-            detectedTextView?.text = String.format(Locale.US, "Detected: %.2f×", multiplier)
+            detectedTextView?.text = formatMultiplier(multiplier)
         }
     }
 
