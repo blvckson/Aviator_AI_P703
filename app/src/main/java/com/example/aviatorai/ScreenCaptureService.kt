@@ -34,6 +34,8 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.util.Locale
 import kotlin.math.abs
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class ScreenCaptureService : Service() {
 
@@ -74,6 +76,8 @@ class ScreenCaptureService : Service() {
     private val history = mutableListOf<Double>()
     private lateinit var preferences: SharedPreferences
     private val predictionModel = PredictionModel()
+    // Keep statistical calculation off the capture/OCR thread.
+    private val predictionExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
     private var currentRoundPeak = Double.NaN
     private var lowAfterPeakCount = 0
@@ -290,8 +294,16 @@ class ScreenCaptureService : Service() {
                     val finalState = containsFlewAway(ocrParts)
                     val multiplier = extractMultiplier(ocrParts, allowBareDecimal)
 
-                    if (finalState && multiplier != null) {
-                        finalizeDetectedRound(multiplier)
+                    if (finalState) {
+                        // The final multiplier and the "flew away" label can be
+                        // split across OCR frames. Preserve the latest validated
+                        // live value if the final OCR frame has no number.
+                        val finalMultiplier = multiplier
+                            ?: lastLiveMultiplier.takeUnless { it.isNaN() }
+                            ?: currentRoundPeak.takeUnless { it.isNaN() }
+                        if (finalMultiplier != null) {
+                            finalizeDetectedRound(finalMultiplier)
+                        }
                     } else if (multiplier != null) {
                         validateMultiplier(multiplier)
                     }
@@ -423,10 +435,6 @@ class ScreenCaptureService : Service() {
 
         updateDetected(multiplier)
         sendLiveMultiplier(multiplier)
-
-        // Prediction is based only on completed rounds. The current live
-        // multiplier is never added to the historical dataset prematurely.
-        calculatePrediction()?.let { updatePrediction(it) }
     }
 
     private fun startLiveRound(multiplier: Double) {
@@ -441,7 +449,6 @@ class ScreenCaptureService : Service() {
         updateDetected(multiplier)
         updateStatus("FLYING " + formatMultiplier(multiplier))
         sendLiveMultiplier(multiplier)
-        calculatePrediction()?.let { updatePrediction(it) }
     }
 
     private fun finalizeDetectedRound(multiplier: Double) {
@@ -495,10 +502,17 @@ class ScreenCaptureService : Service() {
         updateStatus(
             "ROUND SAVED " + formatMultiplier(multiplier) + " | history=" + history.size
         )
-        calculatePrediction()?.let { updatePrediction(it) }
-    }
 
-    private fun calculatePrediction(): PredictionEstimate? = predictionModel.estimate(history)
+        // The round is already displayed/broadcast. Calculate the expensive
+        // statistical estimate from a snapshot so OCR and UI never wait for it.
+        val snapshot = history.toList()
+        predictionExecutor.execute {
+            val estimate = predictionModel.estimate(snapshot)
+            if (estimate != null && !serviceStopping) {
+                handler.post { updatePrediction(estimate) }
+            }
+        }
+    }
 
     private fun loadHistory() {
         try {
@@ -707,6 +721,7 @@ class ScreenCaptureService : Service() {
         stopCapture()
 
         try { recognizer.close() } catch (_: Exception) {}
+        try { predictionExecutor.shutdownNow() } catch (_: Exception) {}
 
         try {
             overlayView?.let { windowManager.removeView(it) }
