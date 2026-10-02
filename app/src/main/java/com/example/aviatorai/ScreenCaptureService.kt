@@ -343,7 +343,7 @@ class ScreenCaptureService : Service() {
             val raw = match.groupValues[1]
             val normalized = normalizeNumericToken(raw)
             val value = normalized.toDoubleOrNull()
-            if (value != null && value.isFinite() && value >= 1.0 && value <= 1.0e12) {
+            if (value != null && value.isFinite() && value >= 1.0 && value <= Double.MAX_VALUE) {
                 return value
             }
         }
