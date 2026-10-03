@@ -100,9 +100,9 @@ class PredictionModel {
         )
 
         val rng = Random(0x51A71 + clean.size)
-        val simulations = ArrayList<Double>(3000)
+        val simulations = ArrayList<Double>(1200)
 
-        repeat(3000) {
+        repeat(1200) {
             val z = gaussian(rng)
             val heavyTail = if (rng.nextDouble() < 0.04) {
                 abs(gaussian(rng)) * tailScale
@@ -147,7 +147,7 @@ class PredictionModel {
     private fun backtestWeight(logs: List<Double>, model: ModelType): Double {
         if (logs.size < 18) return 1.0
 
-        val start = max(12, logs.size - 32)
+        val start = max(12, logs.size - 16)
         val errors = ArrayList<Double>()
 
         for (t in start until logs.size) {
