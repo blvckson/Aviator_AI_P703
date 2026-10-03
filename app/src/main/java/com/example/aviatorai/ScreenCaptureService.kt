@@ -21,6 +21,7 @@ import android.os.IBinder
 import android.content.SharedPreferences
 import org.json.JSONArray
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
@@ -296,6 +297,14 @@ class ScreenCaptureService : Service() {
             sendDiagnosticThrottled("Image ERROR: ${e.message}")
             finishOcr()
         }
+    }
+
+    private fun shouldDeferHistory(): Boolean {
+        if (serviceStopping || ocrBusy || pendingOcrFrames.isNotEmpty()) return true
+        // Give the live final-frame detector a short exclusive window so history
+        // verification cannot steal CPU immediately after a round ends.
+        return lastLiveFinalAt > 0L &&
+            SystemClock.elapsedRealtime() - lastLiveFinalAt < 180L
     }
 
     private fun drainHistoryIfIdle() {
