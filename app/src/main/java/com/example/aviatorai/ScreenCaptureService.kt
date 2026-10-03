@@ -349,8 +349,23 @@ class ScreenCaptureService : Service() {
             .replace('L', '1')
             .replace(Regex("[^0-9xX.,\\s]"), " ")
 
-        // Prefer values explicitly followed by x. Supports ordinary decimals,
-        // OCR-spaced values and large grouped values such as 1,000,000x.
+        // First repair the most important OCR failure mode: ML Kit can split
+        // "1.89x" into "1 . 89 x" or "1. 89x". If we search for the trailing
+        // "89x" first, the detector incorrectly records 89.00. Always join the
+        // integer and fractional parts before considering a suffix-only number.
+        val spacedDecimalWithX = Regex(
+            """(?<![\d.])(\d+)\s*[.]\s*(\d{1,100})\s*[xX]\b"""
+        )
+        for (match in spacedDecimalWithX.findAll(source)) {
+            val value = match.groupValues[1] + "." + match.groupValues[2]
+            val parsed = value.toDoubleOrNull()
+            if (parsed != null && parsed.isFinite() && parsed >= 1.0 && parsed <= Double.MAX_VALUE) {
+                return parsed
+            }
+        }
+
+        // Normal explicit-x values. The full decimal is deliberately captured
+        // as one token, so 1.89x can never degrade into 89x.
         val withX = Regex(
             """(?<![\d.])((?:\d{1,3}(?:[,\s]\d{3})+|\d+)(?:[.]\d{1,100})?)\s*[xX]\b"""
         )
