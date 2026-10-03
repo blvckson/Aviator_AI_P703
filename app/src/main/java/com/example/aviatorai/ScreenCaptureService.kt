@@ -98,6 +98,9 @@ class ScreenCaptureService : Service() {
     // Require repeated history evidence before replacing a live final record.
     private var historyCorrectionCandidate = Double.NaN
     private var historyCorrectionCount = 0
+    private var lastLiveFinalAt = 0L
+    private var lastPredictionInputSize = -1
+    private var lastPredictionAt = 0L
     private var pendingMultiplier = Double.NaN
     private var pendingCount = 0
     private var lastAcceptedTime = 0L
@@ -239,7 +242,7 @@ class ScreenCaptureService : Service() {
             // Capture only one tiny history frame as a fallback. It is NOT
             // OCR'd concurrently with live OCR; the live multiplier always wins.
             val now = System.currentTimeMillis()
-            if (now - lastHistoryScanTime >= 120L) {
+            if (now - lastHistoryScanTime >= 90L && !shouldDeferHistory()) {
                 val historyTop = (bitmap.height * 0.01f).toInt().coerceAtLeast(0)
                 val historyBottom = (bitmap.height * 0.19f).toInt().coerceAtMost(bitmap.height)
                 if (historyBottom > historyTop) {
@@ -377,6 +380,7 @@ class ScreenCaptureService : Service() {
                 history[history.lastIndex] = historyNewest
                 historyCorrectionCandidate = Double.NaN
                 historyCorrectionCount = 0
+                lastLiveFinalAt = SystemClock.elapsedRealtime()
                 saveHistory()
                 sendRoundCompleted(historyNewest)
                 updateStatus(
