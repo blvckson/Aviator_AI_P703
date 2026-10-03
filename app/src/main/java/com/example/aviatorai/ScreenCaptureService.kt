@@ -484,7 +484,7 @@ class ScreenCaptureService : Service() {
                         append(result.text)
                         for (block in result.textBlocks) {
                             for (line in block.lines) {
-                                append('\\n').append(line.text)
+                                append('\n').append(line.text)
                             }
                         }
                     }
