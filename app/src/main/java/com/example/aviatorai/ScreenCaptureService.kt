@@ -341,6 +341,93 @@ class ScreenCaptureService : Service() {
             }
     }
 
+    private fun reconcileHistory(newestFirst: List<Double>) {
+        if (newestFirst.isEmpty()) return
+
+        if (history.isEmpty()) {
+            recordRecoveredRounds(newestFirst.asReversed())
+            return
+        }
+
+        val existingNewestFirst = history
+            .takeLast(minOf(8, history.size))
+            .asReversed()
+
+        var bestOffset = -1
+        var bestScore = -1
+        for (offset in newestFirst.indices) {
+            val comparable = minOf(
+                existingNewestFirst.size,
+                newestFirst.size - offset,
+                4
+            )
+            if (comparable <= 0) continue
+
+            var score = 0
+            for (j in 0 until comparable) {
+                if (sameMultiplier(newestFirst[offset + j], existingNewestFirst[j])) {
+                    score++
+                }
+            }
+
+            if (score > bestScore) {
+                bestScore = score
+                bestOffset = offset
+            }
+        }
+
+        if (bestOffset <= 0) return
+
+        val required = minOf(2, existingNewestFirst.size, newestFirst.size - bestOffset)
+        if (required > 0) {
+            for (j in 0 until required) {
+                if (!sameMultiplier(
+                        newestFirst[bestOffset + j],
+                        existingNewestFirst[j]
+                    )) return
+            }
+        }
+
+        val recovered = newestFirst.subList(0, bestOffset).asReversed()
+        recordRecoveredRounds(recovered)
+    }
+
+    private fun sameMultiplier(a: Double, b: Double): Boolean =
+        a.isFinite() && b.isFinite() && abs(a - b) < 0.011
+
+    private fun recordRecoveredRounds(rounds: List<Double>) {
+        val valid = rounds.filter {
+            it.isFinite() && it >= 1.0 && it <= Double.MAX_VALUE
+        }
+        if (valid.isEmpty()) return
+
+        var added = 0
+        for (value in valid) {
+            if (history.isNotEmpty() && sameMultiplier(history.last(), value)) continue
+            history.add(value)
+            added++
+        }
+
+        if (added == 0) return
+        while (history.size > 2000) history.removeAt(0)
+
+        saveHistory()
+        val newlyAdded = history.takeLast(added)
+        for (value in newlyAdded) sendRoundCompleted(value)
+
+        updateStatus(
+            "HISTORY RECOVERED +" + added + " | latest " + formatMultiplier(history.last())
+        )
+
+        val snapshot = history.toList()
+        predictionExecutor.execute {
+            val estimate = predictionModel.estimate(snapshot)
+            if (estimate != null && !serviceStopping) {
+                handler.post { updatePrediction(estimate) }
+            }
+        }
+    }
+
     private fun runOcr(bitmap: Bitmap, allowBareDecimal: Boolean) {
         val input = InputImage.fromBitmap(bitmap, 0)
 
