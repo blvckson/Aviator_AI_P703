@@ -74,6 +74,7 @@ class ScreenCaptureService : Service() {
     private var statusTextView: TextView? = null
 
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    private val historyRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     private val history = mutableListOf<Double>()
     private lateinit var preferences: SharedPreferences
     private val predictionModel = PredictionModel()
@@ -86,11 +87,13 @@ class ScreenCaptureService : Service() {
     private var lastRoundValue = Double.NaN
     private var lastDiagnosticTime = 0L
     private var ocrBusy = false
-    // OCR is asynchronous and can take longer than the screen frame rate.
-    // Keep a short rolling frame queue instead of silently dropping every
-    // frame that arrives while OCR is busy.
+    // Keep only the newest live frames: stale OCR work is a major source of
+    // final-round latency.
     private val pendingOcrFrames = ArrayDeque<Bitmap>()
-    private val maxPendingOcrFrames = 6
+    private val maxPendingOcrFrames = 2
+    private var historyOcrBusy = false
+    private var lastHistoryScanTime = 0L
+    private var lastHistoryFingerprint = ""
     private var pendingMultiplier = Double.NaN
     private var pendingCount = 0
     private var lastAcceptedTime = 0L
@@ -183,7 +186,7 @@ class ScreenCaptureService : Service() {
             val density = metrics.densityDpi
 
             imageReader = ImageReader.newInstance(
-                width, height, PixelFormat.RGBA_8888, 2
+                width, height, PixelFormat.RGBA_8888, 3
             )
 
             virtualDisplay = mediaProjection?.createVirtualDisplay(
@@ -229,10 +232,32 @@ class ScreenCaptureService : Service() {
             bitmap.copyPixelsFromBuffer(buffer)
             image.close()
 
-            // Use the central multiplier region first. This reduces memory and
-            // OCR load substantially and helps the monitor remain alive.
+            // Aviator's small round-history badges sit in a shallow strip at
+            // the top. Newest is on the left and older results extend right.
+            val now = System.currentTimeMillis()
+            if (!historyOcrBusy && now - lastHistoryScanTime >= 120L) {
+                val historyTop = (bitmap.height * 0.01f).toInt().coerceAtLeast(0)
+                val historyBottom = (bitmap.height * 0.19f).toInt().coerceAtMost(bitmap.height)
+                if (historyBottom > historyTop) {
+                    val historyCrop = Bitmap.createBitmap(
+                        bitmap, 0, historyTop, bitmap.width, historyBottom - historyTop
+                    )
+                    val historyScaled = Bitmap.createScaledBitmap(
+                        historyCrop,
+                        (historyCrop.width * 1.45f).toInt().coerceAtLeast(1),
+                        (historyCrop.height * 1.45f).toInt().coerceAtLeast(1),
+                        true
+                    )
+                    historyCrop.recycle()
+                    lastHistoryScanTime = now
+                    enqueueHistoryOcrFrame(historyScaled)
+                }
+            }
+
+            // Keep the live target below the history strip so the two OCR paths
+            // do not compete over the small historical numbers.
             val cropLeft = (bitmap.width * 0.08f).toInt().coerceAtLeast(0)
-            val cropTop = (bitmap.height * 0.08f).toInt().coerceAtLeast(0)
+            val cropTop = (bitmap.height * 0.15f).toInt().coerceAtLeast(0)
             val cropRight = (bitmap.width * 0.92f).toInt().coerceAtMost(bitmap.width)
             val cropBottom = (bitmap.height * 0.72f).toInt().coerceAtMost(bitmap.height)
 
@@ -261,6 +286,162 @@ class ScreenCaptureService : Service() {
             try { image.close() } catch (_: Exception) {}
             sendDiagnosticThrottled("Image ERROR: ${e.message}")
             finishOcr()
+        }
+    }
+
+    private fun enqueueHistoryOcrFrame(bitmap: Bitmap) {
+        handler.post {
+            if (serviceStopping) {
+                if (!bitmap.isRecycled) bitmap.recycle()
+                return@post
+            }
+            if (historyOcrBusy) {
+                if (!bitmap.isRecycled) bitmap.recycle()
+                return@post
+            }
+            historyOcrBusy = true
+            runHistoryOcr(bitmap)
+        }
+    }
+
+    private fun runHistoryOcr(bitmap: Bitmap) {
+        val input = InputImage.fromBitmap(bitmap, 0)
+        historyRecognizer.process(input)
+            .addOnSuccessListener { result ->
+                try {
+                    val positioned = mutableListOf<Pair<Int, Double>>()
+                    val seen = HashSet<String>()
+
+                    for (block in result.textBlocks) {
+                        for (line in block.lines) {
+                            for (element in line.elements) {
+                                val value = extractMultiplier(element.text, true) ?: continue
+                                val x = element.boundingBox?.centerX() ?: continue
+                                val key = x.toString() + ":" + String.format(Locale.US, "%.4f", value)
+                                if (seen.add(key)) positioned.add(x to value)
+                            }
+
+                            val lineValue = extractMultiplier(line.text, true)
+                            if (lineValue != null) {
+                                val x = line.boundingBox?.centerX()
+                                if (x != null) {
+                                    val key = x.toString() + ":" + String.format(Locale.US, "%.4f", lineValue)
+                                    if (seen.add(key)) positioned.add(x to lineValue)
+                                }
+                            }
+                        }
+                    }
+
+                    // Left-to-right OCR order is newest -> oldest for this strip.
+                    val newestFirst = positioned
+                        .sortedBy { it.first }
+                        .map { it.second }
+
+                    if (newestFirst.isNotEmpty()) {
+                        val fingerprint = newestFirst.joinToString("|") {
+                            String.format(Locale.US, "%.2f", it)
+                        }
+                        if (fingerprint != lastHistoryFingerprint) {
+                            lastHistoryFingerprint = fingerprint
+                            reconcileHistory(newestFirst)
+                        }
+                    }
+                } finally {
+                    if (!bitmap.isRecycled) bitmap.recycle()
+                    handler.post { historyOcrBusy = false }
+                }
+            }
+            .addOnFailureListener { error ->
+                if (!bitmap.isRecycled) bitmap.recycle()
+                sendDiagnosticThrottled("History OCR ERROR: " + error.message)
+                handler.post { historyOcrBusy = false }
+            }
+    }
+
+    private fun reconcileHistory(newestFirst: List<Double>) {
+        if (newestFirst.isEmpty()) return
+
+        if (history.isEmpty()) {
+            recordRecoveredRounds(newestFirst.asReversed())
+            return
+        }
+
+        val existingNewestFirst = history
+            .takeLast(minOf(8, history.size))
+            .asReversed()
+
+        var bestOffset = -1
+        var bestScore = -1
+        for (offset in newestFirst.indices) {
+            val comparable = minOf(
+                existingNewestFirst.size,
+                newestFirst.size - offset,
+                4
+            )
+            if (comparable <= 0) continue
+
+            var score = 0
+            for (j in 0 until comparable) {
+                if (sameMultiplier(newestFirst[offset + j], existingNewestFirst[j])) {
+                    score++
+                }
+            }
+
+            if (score > bestScore) {
+                bestScore = score
+                bestOffset = offset
+            }
+        }
+
+        if (bestOffset <= 0) return
+
+        val required = minOf(2, existingNewestFirst.size, newestFirst.size - bestOffset)
+        if (required > 0) {
+            for (j in 0 until required) {
+                if (!sameMultiplier(
+                        newestFirst[bestOffset + j],
+                        existingNewestFirst[j]
+                    )) return
+            }
+        }
+
+        val recovered = newestFirst.subList(0, bestOffset).asReversed()
+        recordRecoveredRounds(recovered)
+    }
+
+    private fun sameMultiplier(a: Double, b: Double): Boolean =
+        a.isFinite() && b.isFinite() && abs(a - b) < 0.011
+
+    private fun recordRecoveredRounds(rounds: List<Double>) {
+        val valid = rounds.filter {
+            it.isFinite() && it >= 1.0 && it <= Double.MAX_VALUE
+        }
+        if (valid.isEmpty()) return
+
+        var added = 0
+        for (value in valid) {
+            if (history.isNotEmpty() && sameMultiplier(history.last(), value)) continue
+            history.add(value)
+            added++
+        }
+
+        if (added == 0) return
+        while (history.size > 2000) history.removeAt(0)
+
+        saveHistory()
+        val newlyAdded = history.takeLast(added)
+        for (value in newlyAdded) sendRoundCompleted(value)
+
+        updateStatus(
+            "HISTORY RECOVERED +" + added + " | latest " + formatMultiplier(history.last())
+        )
+
+        val snapshot = history.toList()
+        predictionExecutor.execute {
+            val estimate = predictionModel.estimate(snapshot)
+            if (estimate != null && !serviceStopping) {
+                handler.post { updatePrediction(estimate) }
+            }
         }
     }
 
@@ -415,7 +596,7 @@ class ScreenCaptureService : Service() {
         if (serviceStopping || ocrBusy || pendingOcrFrames.isEmpty()) return
 
         ocrBusy = true
-        val next = pendingOcrFrames.removeFirst()
+        val next = pendingOcrFrames.removeLast()
         runOcr(next, true)
     }
 
@@ -761,6 +942,7 @@ class ScreenCaptureService : Service() {
         stopCapture()
 
         try { recognizer.close() } catch (_: Exception) {}
+        try { historyRecognizer.close() } catch (_: Exception) {}
         while (pendingOcrFrames.isNotEmpty()) {
             val frame = pendingOcrFrames.removeFirst()
             try { if (!frame.isRecycled) frame.recycle() } catch (_: Exception) {}
