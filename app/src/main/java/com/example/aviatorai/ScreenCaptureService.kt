@@ -79,6 +79,12 @@ class ScreenCaptureService : Service() {
     private val predictionModel = PredictionModel()
     // Keep statistical calculation off the capture/OCR thread.
     private val predictionExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val historyScannerExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val historyRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    private var historyScanRequested = false
+    private var historyScanInFlight = false
+    private var lastHistoryScanTime = 0L
+    private val historyLock = Any()
 
     private var currentRoundPeak = Double.NaN
     private var lowAfterPeakCount = 0
@@ -91,6 +97,7 @@ class ScreenCaptureService : Service() {
     // frame that arrives while OCR is busy.
     private val pendingOcrFrames = ArrayDeque<Bitmap>()
     private val maxPendingOcrFrames = 1
+    private val historyScanIntervalMs = 350L
     private var pendingMultiplier = Double.NaN
     private var pendingCount = 0
     private var lastAcceptedTime = 0L
@@ -256,6 +263,7 @@ class ScreenCaptureService : Service() {
             )
             crop.recycle()
 
+            maybeQueueHistoryScan(enlarged)
             enqueueOcrFrame(enlarged)
         } catch (e: Exception) {
             try { image.close() } catch (_: Exception) {}
@@ -391,6 +399,133 @@ class ScreenCaptureService : Service() {
         }
 
         return token.replace(" ", "")
+    }
+
+    private fun maybeQueueHistoryScan(bitmap: Bitmap) {
+        val now = System.currentTimeMillis()
+        if (!historyScanRequested || historyScanInFlight ||
+            now - lastHistoryScanTime < historyScanIntervalMs) return
+        historyScanRequested = false
+        lastHistoryScanTime = now
+        historyScanInFlight = true
+        val h = (bitmap.height * 0.32f).toInt().coerceAtLeast(1)
+        val historyCrop = try {
+            Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, h)
+        } catch (_: Exception) {
+            historyScanInFlight = false
+            return
+        }
+        historyScannerExecutor.execute { runHistoryOcr(historyCrop) }
+    }
+
+    private fun runHistoryOcr(bitmap: Bitmap) {
+        val input = InputImage.fromBitmap(bitmap, 0)
+        historyRecognizer.process(input)
+            .addOnSuccessListener { result ->
+                try {
+                    val text = buildString {
+                        append(result.text)
+                        for (block in result.textBlocks) {
+                            for (line in block.lines) {
+                                append('\n').append(line.text)
+                                for (element in line.elements) append(' ').append(element.text)
+                            }
+                        }
+                    }
+                    val values = extractMultipliers(text)
+                    if (values.size >= 2) reconcileHistory(values)
+                } finally {
+                    try { if (!bitmap.isRecycled) bitmap.recycle() } catch (_: Exception) {}
+                    historyScanInFlight = false
+                }
+            }
+            .addOnFailureListener {
+                try { if (!bitmap.isRecycled) bitmap.recycle() } catch (_: Exception) {}
+                historyScanInFlight = false
+            }
+    }
+
+    private fun extractMultipliers(text: String): List<Double> {
+        if (text.isBlank()) return emptyList()
+        val source = text
+            .replace('×', 'x').replace('X', 'x')
+            .replace('O', '0').replace('o', '0')
+            .replace('I', '1').replace('l', '1').replace('L', '1')
+            .replace(Regex("[^0-9xX.,\\s]"), " ")
+        val regex = Regex("""(?<![\d.])((?:\d{1,3}(?:[,\s]\d{3})+|\d+)(?:[.]\d{1,100})?)\s*[xX]\b""")
+        return regex.findAll(source)
+            .mapNotNull { normalizeNumericToken(it.groupValues[1]).toDoubleOrNull() }
+            .filter { it.isFinite() && it >= 1.0 }
+            .distinctBy { String.format(Locale.US, "%.4f", it) }
+            .take(40).toList()
+    }
+
+    private fun reconcileHistory(scannedRaw: List<Double>) {
+        val scanned = scannedRaw.filter { it.isFinite() && it >= 1.0 }
+        if (scanned.size < 2) return
+        synchronized(historyLock) {
+            if (history.isEmpty()) return
+            val candidates = listOf(scanned, scanned.asReversed())
+            var best = emptyList<Double>()
+            var bestOverlap = 0
+            for (candidate in candidates) {
+                val overlap = candidate.takeLast(20).count { v ->
+                    history.takeLast(20).any { abs(it - v) < 0.011 }
+                }
+                if (overlap > bestOverlap) {
+                    bestOverlap = overlap
+                    best = candidate
+                }
+            }
+            if (bestOverlap < 2 || best.isEmpty()) return
+            val recent = best.takeLast(20)
+            val savedStart = maxOf(0, history.size - 20)
+            val saved = history.subList(savedStart, history.size).toList()
+            var scanIndex = -1
+            var historyIndex = -1
+            outer@ for (i in recent.indices) {
+                for (j in saved.indices) {
+                    if (abs(recent[i] - saved[j]) < 0.011) {
+                        scanIndex = i
+                        historyIndex = j
+                        break@outer
+                    }
+                }
+            }
+            if (scanIndex < 0 || historyIndex < 0) return
+            var changed = false
+            var h = savedStart + historyIndex
+            for (i in scanIndex until recent.size) {
+                val value = recent[i]
+                if (h < history.size) {
+                    if (abs(history[h] - value) >= 0.011) {
+                        history[h] = value
+                        changed = true
+                    }
+                } else {
+                    history.add(value)
+                    changed = true
+                }
+                h++
+            }
+            if (!changed) return
+            if (history.size > 2000) {
+                val trimmed = history.takeLast(2000)
+                history.clear()
+                history.addAll(trimmed)
+            }
+            saveHistory()
+            val corrected = history.last()
+            handler.post {
+                updateDetected(corrected)
+                updateStatus("HISTORY CORRECTED -> \${formatMultiplier(corrected)} | history=\${history.size}")
+            }
+            sendDiagnostic("History scanner corrected/recovered recent round records")
+        }
+    }
+
+    private fun requestHistoryScan() {
+        historyScanRequested = true
     }
 
     private fun enqueueOcrFrame(bitmap: Bitmap) {
@@ -533,9 +668,12 @@ class ScreenCaptureService : Service() {
     private fun completeRound(multiplier: Double) {
         if (!multiplier.isFinite() || multiplier < 1.0 || multiplier > Double.MAX_VALUE) return
 
-        history.add(multiplier)
-        if (history.size > 2000) history.removeAt(0)
-        saveHistory()
+        synchronized(historyLock) {
+            history.add(multiplier)
+            if (history.size > 2000) history.removeAt(0)
+            saveHistory()
+        }
+        requestHistoryScan()
         sendRoundCompleted(multiplier)
 
         updateStatus(
@@ -544,7 +682,7 @@ class ScreenCaptureService : Service() {
 
         // The round is already displayed/broadcast. Calculate the expensive
         // statistical estimate from a snapshot so OCR and UI never wait for it.
-        val snapshot = history.toList()
+        val snapshot = synchronized(historyLock) { history.toList() }
         predictionExecutor.execute {
             val estimate = predictionModel.estimate(snapshot)
             if (estimate != null && !serviceStopping) {
@@ -765,6 +903,8 @@ class ScreenCaptureService : Service() {
             try { if (!frame.isRecycled) frame.recycle() } catch (_: Exception) {}
         }
         try { predictionExecutor.shutdownNow() } catch (_: Exception) {}
+        try { historyScannerExecutor.shutdownNow() } catch (_: Exception) {}
+        try { historyRecognizer.close() } catch (_: Exception) {}
 
         try {
             overlayView?.let { windowManager.removeView(it) }
