@@ -73,7 +73,7 @@ class PredictionModel {
         val point = exp(posteriorLog).coerceIn(1.01, Double.MAX_VALUE)
 
         val rng = Random(0x51A71 + clean.size)
-        val simulations = ArrayList<Double>(4000)
+        val simulations = ArrayList<Double>(1200)
 
         val residuals = recent.map { it - recentMedian }
         val residualScale = max(
@@ -81,7 +81,7 @@ class PredictionModel {
             median(residuals.map { abs(it) }.sorted()) * 1.4826
         ).coerceAtLeast(0.035)
 
-        repeat(4000) {
+        repeat(1200) {
             // Recency-biased bootstrap from recent validated rounds.
             val idx = rng.nextInt(recent.size)
             val bootstrapResidual = residuals[idx]
