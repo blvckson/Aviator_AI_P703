@@ -38,3 +38,4 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
 
 # Final verification build trigger
+# Compile verification after OCR/prediction optimization fixes
