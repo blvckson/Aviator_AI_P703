@@ -95,6 +95,9 @@ class ScreenCaptureService : Service() {
     private var pendingHistoryFrame: Bitmap? = null
     private var lastHistoryScanTime = 0L
     private var lastHistoryFingerprint = ""
+    // Require repeated history evidence before replacing a live final record.
+    private var historyCorrectionCandidate = Double.NaN
+    private var historyCorrectionCount = 0
     private var pendingMultiplier = Double.NaN
     private var pendingCount = 0
     private var lastAcceptedTime = 0L
@@ -236,7 +239,7 @@ class ScreenCaptureService : Service() {
             // Capture only one tiny history frame as a fallback. It is NOT
             // OCR'd concurrently with live OCR; the live multiplier always wins.
             val now = System.currentTimeMillis()
-            if (now - lastHistoryScanTime >= 350L) {
+            if (now - lastHistoryScanTime >= 120L) {
                 val historyTop = (bitmap.height * 0.01f).toInt().coerceAtLeast(0)
                 val historyBottom = (bitmap.height * 0.19f).toInt().coerceAtMost(bitmap.height)
                 if (historyBottom > historyTop) {
@@ -352,6 +355,46 @@ class ScreenCaptureService : Service() {
         val existingNewestFirst = history
             .takeLast(minOf(8, history.size))
             .asReversed()
+
+        // First, verify/correct the newest saved result. The history strip is
+        // treated as independent evidence, but a single OCR error is never
+        // allowed to overwrite a live result.
+        val historyNewest = newestFirst.firstOrNull()
+        val savedNewest = history.lastOrNull()
+        if (historyNewest != null && savedNewest != null &&
+            !sameMultiplier(historyNewest, savedNewest)
+        ) {
+            if (!historyCorrectionCandidate.isNaN() &&
+                sameMultiplier(historyNewest, historyCorrectionCandidate)
+            ) {
+                historyCorrectionCount++
+            } else {
+                historyCorrectionCandidate = historyNewest
+                historyCorrectionCount = 1
+            }
+
+            if (historyCorrectionCount >= 2) {
+                history[history.lastIndex] = historyNewest
+                historyCorrectionCandidate = Double.NaN
+                historyCorrectionCount = 0
+                saveHistory()
+                sendRoundCompleted(historyNewest)
+                updateStatus(
+                    "HISTORY CORRECTED | latest " + formatMultiplier(historyNewest)
+                )
+
+                val snapshot = history.toList()
+                predictionExecutor.execute {
+                    val estimate = predictionModel.estimate(snapshot)
+                    if (estimate != null && !serviceStopping) {
+                        handler.post { updatePrediction(estimate) }
+                    }
+                }
+            }
+        } else {
+            historyCorrectionCandidate = Double.NaN
+            historyCorrectionCount = 0
+        }
 
         var bestOffset = -1
         var bestScore = -1
