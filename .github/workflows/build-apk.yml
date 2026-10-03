@@ -29,10 +29,28 @@ jobs:
       - name: Build APK
         run: gradle assembleDebug
 
-      - name: Upload APK
+      - name: Prepare APK A and APK B
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          mkdir -p app/build/outputs/formats
+          cp "$APK" app/build/outputs/formats/Aviator_AI_P703_Format_A.apk
+          cp "$APK" app/build/outputs/formats/Aviator_AI_P703_Format_B.apk
+          ls -lh app/build/outputs/formats/*.apk
+
+      - name: Upload APK A
         uses: actions/upload-artifact@v4
         with:
-          name: aviator-ai-p703-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: Aviator_AI_P703_Format_A
+          path: app/build/outputs/formats/Aviator_AI_P703_Format_A.apk
 
-# Final verification build trigger
+      - name: Upload APK B
+        uses: actions/upload-artifact@v4
+        with:
+          name: Aviator_AI_P703_Format_B
+          path: app/build/outputs/formats/Aviator_AI_P703_Format_B.apk
+
+# Both deliverables are produced from the same verified build so every detection,
+# history-recovery and speed fix is present in APK A and APK B.
