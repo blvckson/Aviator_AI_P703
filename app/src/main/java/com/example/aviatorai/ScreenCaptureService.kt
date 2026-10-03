@@ -90,7 +90,7 @@ class ScreenCaptureService : Service() {
     // Keep a short rolling frame queue instead of silently dropping every
     // frame that arrives while OCR is busy.
     private val pendingOcrFrames = ArrayDeque<Bitmap>()
-    private val maxPendingOcrFrames = 6
+    private val maxPendingOcrFrames = 1
     private var pendingMultiplier = Double.NaN
     private var pendingCount = 0
     private var lastAcceptedTime = 0L
@@ -178,8 +178,8 @@ class ScreenCaptureService : Service() {
             if (overlayView == null) createFloatingDisplay()
 
             val metrics = resources.displayMetrics
-            val width = metrics.widthPixels
-            val height = metrics.heightPixels
+            val width = (metrics.widthPixels * 0.75f).toInt().coerceAtLeast(480)
+            val height = (metrics.heightPixels * 0.75f).toInt().coerceAtLeast(800)
             val density = metrics.densityDpi
 
             imageReader = ImageReader.newInstance(
@@ -250,8 +250,8 @@ class ScreenCaptureService : Service() {
 
             val enlarged = Bitmap.createScaledBitmap(
                 crop,
-                (crop.width * 1.8f).toInt().coerceAtLeast(1),
-                (crop.height * 1.8f).toInt().coerceAtLeast(1),
+                (crop.width * 1.5f).toInt().coerceAtLeast(1),
+                (crop.height * 1.5f).toInt().coerceAtLeast(1),
                 true
             )
             crop.recycle()
@@ -402,7 +402,7 @@ class ScreenCaptureService : Service() {
 
             // Preserve the newest frames. Old frames are less useful than the
             // frames closest to a round transition.
-            while (pendingOcrFrames.size >= maxPendingOcrFrames) {
+            while (pendingOcrFrames.isNotEmpty()) {
                 val old = pendingOcrFrames.removeFirst()
                 if (!old.isRecycled) old.recycle()
             }
@@ -458,8 +458,7 @@ class ScreenCaptureService : Service() {
         }
 
         val now = System.currentTimeMillis()
-        if (now - lastAcceptedTime < 35L &&
-            !lastLiveMultiplier.isNaN() &&
+        if (!lastLiveMultiplier.isNaN() &&
             abs(multiplier - lastLiveMultiplier) < 0.001) {
             return
         }
