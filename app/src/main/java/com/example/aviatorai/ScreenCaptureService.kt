@@ -295,10 +295,12 @@ class ScreenCaptureService : Service() {
                     val multiplier = extractMultiplier(text, allowBareDecimal)
 
                     if (finalState) {
-                        // The final multiplier and the "flew away" label can be
-                        // split across OCR frames. Preserve the latest validated
-                        // live value if the final OCR frame has no number.
-                        val finalMultiplier = multiplier
+                        // ENDING-ROUND PATH ONLY:
+                        // Prefer the number attached to the "flew away" screen.
+                        // Final OCR can contain history text as well, so the
+                        // generic live parser is not authoritative here.
+                        val finalMultiplier = extractEndingMultiplier(ocrParts)
+                            ?: multiplier
                             ?: lastLiveMultiplier.takeUnless { it.isNaN() }
                             ?: currentRoundPeak.takeUnless { it.isNaN() }
                         if (finalMultiplier != null) {
@@ -389,6 +391,63 @@ class ScreenCaptureService : Service() {
         }
 
         return null
+    }
+
+    // Dedicated final-screen parser. This is intentionally used only when
+    // "flew away" is present, so it cannot alter ordinary live detection.
+    private fun extractEndingMultiplier(text: String): Double? {
+        if (text.isBlank()) return null
+
+        val source = text
+            .replace('×', 'x')
+            .replace('X', 'x')
+            .replace('O', '0')
+            .replace('o', '0')
+            .replace('I', '1')
+            .replace('l', '1')
+            .replace('L', '1')
+            .replace(Regex("[^0-9xX.,\\s]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        val lower = source.lowercase(Locale.US)
+        val endingIndex = lower.indexOf("flew away").let {
+            if (it >= 0) it else lower.indexOf("flew awa")
+        }
+        if (endingIndex < 0) return null
+
+        // On the final screen the multiplier is normally immediately before
+        // "flew away". Limit the search window so old history values cannot win.
+        val before = source.substring(0, endingIndex)
+            .takeLast(90)
+            .trim()
+
+        val spacedDecimal = Regex(
+            """(?<![\\d.])(\\d+)\\s*[.]\\s*(\\d{1,100})\\s*[xX]?\\b"""
+        )
+        val explicitX = Regex(
+            """(?<![\\d.])((?:\\d{1,3}(?:[,\\s]\\d{3})+|\\d+)(?:[.]\\d{1,100})?)\\s*[xX]\\b"""
+        )
+        val bareDecimal = Regex(
+            """(?<![\\d.])(\\d+\\.\\d+)(?![\\d.])"""
+        )
+
+        val candidates = mutableListOf<Pair<Int, Double>>()
+
+        for (m in spacedDecimal.findAll(before)) {
+            val v = (m.groupValues[1] + "." + m.groupValues[2]).toDoubleOrNull()
+            if (v != null && v.isFinite() && v >= 1.0) candidates.add(m.range.last to v)
+        }
+        for (m in explicitX.findAll(before)) {
+            val v = normalizeNumericToken(m.groupValues[1]).toDoubleOrNull()
+            if (v != null && v.isFinite() && v >= 1.0) candidates.add(m.range.last to v)
+        }
+        for (m in bareDecimal.findAll(before)) {
+            val v = m.groupValues[1].toDoubleOrNull()
+            if (v != null && v.isFinite() && v >= 1.0) candidates.add(m.range.last to v)
+        }
+
+        return candidates.maxByOrNull { it.first }?.second
     }
 
     private fun normalizeNumericToken(raw: String): String {
