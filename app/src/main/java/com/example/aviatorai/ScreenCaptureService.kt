@@ -79,8 +79,13 @@ class ScreenCaptureService : Service() {
     private val predictionModel = PredictionModel()
     // Keep statistical calculation off the capture/OCR thread.
     private val predictionExecutor: ExecutorService = Executors.newSingleThreadExecutor()
-    // History recovery is deliberately passive in this stable build. The live detector
-    // remains the sole OCR pipeline so detection/next-odd timing cannot be blocked.
+    // Correction is a one-shot asynchronous verifier requested after a completed
+    // round. It never blocks the live OCR pipeline.
+    private val correctionExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val correctionRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    private var correctionRequested = false
+    private var correctionInFlight = false
+    private var lastCorrectionTime = 0L
 
     private var currentRoundPeak = Double.NaN
     private var lowAfterPeakCount = 0
@@ -93,6 +98,7 @@ class ScreenCaptureService : Service() {
     // frame that arrives while OCR is busy.
     private val pendingOcrFrames = ArrayDeque<Bitmap>()
     private val maxPendingOcrFrames = 1
+    private val correctionIntervalMs = 450L
     private var pendingMultiplier = Double.NaN
     private var pendingCount = 0
     private var lastAcceptedTime = 0L
@@ -250,14 +256,17 @@ class ScreenCaptureService : Service() {
             )
             bitmap.recycle()
 
+            // Keep enough enlargement for small multiplier text, but reduce the
+            // OCR workload so more live frames can be examined.
             val enlarged = Bitmap.createScaledBitmap(
                 crop,
-                (crop.width * 1.5f).toInt().coerceAtLeast(1),
-                (crop.height * 1.5f).toInt().coerceAtLeast(1),
+                (crop.width * 1.25f).toInt().coerceAtLeast(1),
+                (crop.height * 1.25f).toInt().coerceAtLeast(1),
                 true
             )
             crop.recycle()
 
+            maybeRunCorrectionScan(enlarged)
             enqueueOcrFrame(enlarged)
         } catch (e: Exception) {
             try { image.close() } catch (_: Exception) {}
@@ -278,24 +287,12 @@ class ScreenCaptureService : Service() {
                         return@addOnSuccessListener
                     }
 
-                    // Use the richer ML Kit hierarchy as well as the flat OCR text.
-                    // This catches the live number even when punctuation/spaces are
-                    // split across OCR lines or elements.
-                    val ocrParts = buildString {
-                        append(text)
-                        for (block in result.textBlocks) {
-                            for (line in block.lines) {
-                                append('\n').append(line.text)
-                                for (element in line.elements) {
-                                    append(' ').append(element.text)
-                                }
-                            }
-                        }
-                    }
-
+                    // ML Kit's flat result already contains the OCR lines. Avoid
+                    // rebuilding the full block/element tree on every frame: that
+                    // extra work was contributing to dropped live rounds.
                     sendDiagnosticThrottled("OCR RAW: $text")
-                    val finalState = containsFlewAway(ocrParts)
-                    val multiplier = extractMultiplier(ocrParts, allowBareDecimal)
+                    val finalState = containsFlewAway(text)
+                    val multiplier = extractMultiplier(text, allowBareDecimal)
 
                     if (finalState) {
                         // The final multiplier and the "flew away" label can be
@@ -408,6 +405,133 @@ class ScreenCaptureService : Service() {
         }
 
         return token.replace(" ", "")
+    }
+
+    private fun requestCorrectionScan() {
+        val now = System.currentTimeMillis()
+        if (serviceStopping || correctionRequested || correctionInFlight ||
+            now - lastCorrectionTime < correctionIntervalMs) return
+        correctionRequested = true
+    }
+
+    private fun maybeRunCorrectionScan(bitmap: Bitmap) {
+        if (!correctionRequested || correctionInFlight || serviceStopping) return
+        correctionRequested = false
+        correctionInFlight = true
+        lastCorrectionTime = System.currentTimeMillis()
+
+        // The upper part of the Aviator screen contains the recent-round history.
+        val h = (bitmap.height * 0.34f).toInt().coerceAtLeast(1)
+        val historyCrop = try {
+            Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, h)
+        } catch (_: Exception) {
+            correctionInFlight = false
+            return
+        }
+
+        correctionExecutor.execute {
+            correctionRecognizer.process(InputImage.fromBitmap(historyCrop, 0))
+                .addOnSuccessListener { result ->
+                    try {
+                        reconcileHistory(extractHistoryMultipliers(result.text))
+                    } finally {
+                        if (!historyCrop.isRecycled) historyCrop.recycle()
+                        correctionInFlight = false
+                    }
+                }
+                .addOnFailureListener {
+                    if (!historyCrop.isRecycled) historyCrop.recycle()
+                    correctionInFlight = false
+                }
+        }
+    }
+
+    private fun extractHistoryMultipliers(text: String): List<Double> {
+        if (text.isBlank()) return emptyList()
+        val source = text
+            .replace('×', 'x').replace('X', 'x')
+            .replace('O', '0').replace('o', '0')
+            .replace('I', '1').replace('l', '1').replace('L', '1')
+            .replace(Regex("[^0-9xX.,\\s]"), " ")
+
+        val regex = Regex(
+            """(?<![\d.])((?:\d{1,3}(?:[,\s]\d{3})+|\d+)(?:[.]\d{1,100})?)\s*[xX]\b"""
+        )
+        return regex.findAll(source)
+            .mapNotNull { normalizeNumericToken(it.groupValues[1]).toDoubleOrNull() }
+            .filter { it.isFinite() && it >= 1.0 }
+            .distinctBy { String.format(Locale.US, "%.4f", it) }
+            .take(30)
+            .toList()
+    }
+
+    private fun reconcileHistory(scanned: List<Double>) {
+        if (scanned.size < 2 || history.isEmpty()) return
+
+        val recent = history.takeLast(20)
+        val ordered = listOf(scanned, scanned.asReversed())
+        var best: List<Double>? = null
+        var bestOverlap = 0
+
+        for (candidate in ordered) {
+            val overlap = candidate.takeLast(20).count { value ->
+                recent.any { abs(it - value) < 0.011 }
+            }
+            if (overlap > bestOverlap) {
+                bestOverlap = overlap
+                best = candidate
+            }
+        }
+
+        if (bestOverlap < 2 || best == null) return
+
+        synchronized(history) {
+            val start = maxOf(0, history.size - 20)
+            val saved = history.subList(start, history.size).toList()
+            var anchorScan = -1
+            var anchorSaved = -1
+
+            outer@ for (i in best.indices) {
+                for (j in saved.indices) {
+                    if (abs(best[i] - saved[j]) < 0.011) {
+                        anchorScan = i
+                        anchorSaved = j
+                        break@outer
+                    }
+                }
+            }
+            if (anchorScan < 0) return
+
+            var changed = false
+            var target = start + anchorSaved
+            for (i in anchorScan until best.size) {
+                val value = best[i]
+                if (target < history.size) {
+                    if (abs(history[target] - value) >= 0.011) {
+                        history[target] = value
+                        changed = true
+                    }
+                } else {
+                    history.add(value)
+                    changed = true
+                }
+                target++
+            }
+
+            if (!changed) return
+            if (history.size > 2000) {
+                val trimmed = history.takeLast(2000)
+                history.clear()
+                history.addAll(trimmed)
+            }
+            saveHistory()
+            val corrected = history.last()
+            handler.post {
+                updateDetected(corrected)
+                updateStatus("CORRECTED " + formatMultiplier(corrected) + " | history=" + history.size)
+            }
+            sendDiagnostic("Correction scan recovered/verified recent round history")
+        }
     }
 
     private fun enqueueOcrFrame(bitmap: Bitmap) {
@@ -553,6 +677,7 @@ class ScreenCaptureService : Service() {
         history.add(multiplier)
         if (history.size > 2000) history.removeAt(0)
         saveHistory()
+        requestCorrectionScan()
         sendRoundCompleted(multiplier)
 
         updateStatus(
@@ -782,6 +907,8 @@ class ScreenCaptureService : Service() {
             try { if (!frame.isRecycled) frame.recycle() } catch (_: Exception) {}
         }
         try { predictionExecutor.shutdownNow() } catch (_: Exception) {}
+        try { correctionExecutor.shutdownNow() } catch (_: Exception) {}
+        try { correctionRecognizer.close() } catch (_: Exception) {}
 
         try {
             overlayView?.let { windowManager.removeView(it) }
