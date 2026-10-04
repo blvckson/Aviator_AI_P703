@@ -299,7 +299,7 @@ class ScreenCaptureService : Service() {
                         // Prefer the number attached to the "flew away" screen.
                         // Final OCR can contain history text as well, so the
                         // generic live parser is not authoritative here.
-                        val finalMultiplier = extractEndingMultiplier(ocrParts)
+                        val finalMultiplier = extractEndingMultiplier(text)
                             ?: multiplier
                             ?: lastLiveMultiplier.takeUnless { it.isNaN() }
                             ?: currentRoundPeak.takeUnless { it.isNaN() }
