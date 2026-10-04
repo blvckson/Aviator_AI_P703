@@ -21,6 +21,8 @@ import android.os.IBinder
 import android.content.SharedPreferences
 import org.json.JSONArray
 import android.os.Looper
+import android.os.HandlerThread
+import android.os.Process
 import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
@@ -63,6 +65,10 @@ class ScreenCaptureService : Service() {
     }
 
     private val handler = Handler(Looper.getMainLooper())
+    // Performance-only addition: move screen-frame bitmap/crop work off the UI thread.
+    // Detection, OCR, validation and round-finalization logic remain unchanged.
+    private val captureThread = HandlerThread("AviatorCapture", Process.THREAD_PRIORITY_DISPLAY).apply { start() }
+    private val captureHandler = Handler(captureThread.looper)
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
@@ -206,7 +212,7 @@ class ScreenCaptureService : Service() {
 
             imageReader?.setOnImageAvailableListener({ reader ->
                 processImage(reader)
-            }, handler)
+            }, captureHandler)
 
             updateStatus("MONITORING")
             sendDiagnostic("Screen capture started")
@@ -904,6 +910,7 @@ class ScreenCaptureService : Service() {
         }
         try { predictionExecutor.shutdownNow() } catch (_: Exception) {}
         try { historyScannerExecutor.shutdownNow() } catch (_: Exception) {}
+        try { captureThread.quitSafely() } catch (_: Exception) {}
         try { historyRecognizer.close() } catch (_: Exception) {}
 
         try {
