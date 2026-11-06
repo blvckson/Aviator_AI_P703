@@ -57,6 +57,7 @@ class PocketVoice {
 
     // Metrics
     this.rtfMovingAvg = 0;
+    this.playbackSpeed = 1;
 
     // Built-in voices list
     this.builtinVoices = [];
@@ -75,6 +76,8 @@ class PocketVoice {
       langSelect: document.getElementById("language-select"),
       voiceSelect: document.getElementById("voice-select"),
       textInput: document.getElementById("text-input"),
+      narratorSpeed: document.getElementById("narrator-speed"),
+      narratorSpeedValue: document.getElementById("narrator-speed-value"),
       charCount: document.getElementById("char-count"),
       btnGenerate: document.getElementById("btn-generate"),
       btnStop: document.getElementById("btn-stop"),
@@ -199,6 +202,11 @@ class PocketVoice {
         this.el.textInput.value = btn.dataset.text;
         this.el.charCount.textContent = btn.dataset.text.length;
       });
+    });
+
+    this.el.narratorSpeed.addEventListener("input", () => {
+      this.playbackSpeed = Number(this.el.narratorSpeed.value);
+      this.el.narratorSpeedValue.textContent = `${this.playbackSpeed.toFixed(2)}×`;
     });
 
     this.el.btnGenerate.addEventListener("click", () => this.generate());
@@ -717,11 +725,28 @@ class PocketVoice {
     this.resetUI();
   }
 
+  applyPlaybackSpeed(samples) {
+    const rate = this.playbackSpeed;
+    if (Math.abs(rate - 1) < 0.001 || samples.length < 2) return samples;
+    // Linear resampling changes playback duration (and pitch) without changing
+    // the model output or the WAV download, which remains at its native speed.
+    const outputLength = Math.max(1, Math.floor(samples.length / rate));
+    const output = new Float32Array(outputLength);
+    for (let i = 0; i < outputLength; i++) {
+      const position = i * rate;
+      const left = Math.min(Math.floor(position), samples.length - 1);
+      const right = Math.min(left + 1, samples.length - 1);
+      const fraction = position - left;
+      output[i] = samples[left] * (1 - fraction) + samples[right] * fraction;
+    }
+    return output;
+  }
+
   handleAudioChunk(data, metrics) {
     if (!this.isGenerating) return;
     const pcm = new Float32Array(data);
     this.currentChunks.push(pcm);
-    this.player.playAudio(pcm);
+    this.player.playAudio(this.applyPlaybackSpeed(pcm));
 
     if (metrics?.isFirst) {
       this.el.statTTFB.textContent = Math.round(performance.now() - this.generationStartTime);
