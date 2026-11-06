@@ -1,33 +1,65 @@
-name: Build Aviator AI P703
+name: Build Aviator AI APK
 
 on:
-  workflow_dispatch:
+  pull_request:
+    branches: [main]
   push:
-    branches:
-      - main
+    branches: [main, "port/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Java 17
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+      - name: Prepare the bundled app and local voice studio
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf app/src/main/assets
+          mkdir -p app/src/main/assets
+          cp -R public/. app/src/main/assets/
+
+          VOICE_DIR="app/src/main/assets/voice"
+          MODEL_DIR="$VOICE_DIR/onnx/english_2026-04"
+          ORT_DIR="$VOICE_DIR/ort"
+          mkdir -p "$MODEL_DIR" "$ORT_DIR"
+
+          curl -fL --retry 3 -o "$VOICE_DIR/sentencepiece.js" "https://raw.githubusercontent.com/hemanth/pocket-voice/main/sentencepiece.js"
+          curl -fL --retry 3 -o "$ORT_DIR/ort.min.js" "https://unpkg.com/onnxruntime-web@1.18.0/dist/ort.min.js"
+          curl -fL --retry 3 -o "$ORT_DIR/ort-wasm.wasm" "https://unpkg.com/onnxruntime-web@1.18.0/dist/ort-wasm.wasm"
+
+          BASE="https://huggingface.co/spaces/KevinAHM/pocket-tts-web/resolve/main/onnx/english_2026-04"
+          for f in bundle.json tokenizer.model bos_before_voice.npy mimi_encoder_int8.onnx text_conditioner_int8.onnx flow_lm_main_int8.onnx flow_lm_flow_int8.onnx mimi_decoder_int8.onnx; do
+            curl -fL --retry 3 -o "$MODEL_DIR/$f" "$BASE/$f"
+          done
+
+          test -s "$VOICE_DIR/index.html"
+          test -s "$VOICE_DIR/app.js"
+          test -s "$MODEL_DIR/flow_lm_main_int8.onnx"
+          du -sh "$VOICE_DIR"
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
 
       - name: Show dependencies
         run: gradle :app:dependencies --configuration debugRuntimeClasspath
 
       - name: Build APK
-        run: gradle assembleDebug
+        run: gradle assembleDebug --no-daemon
 
       - name: Prepare APK A and APK B
         shell: bash
@@ -51,6 +83,3 @@ jobs:
         with:
           name: Aviator_AI_P703_Format_B
           path: app/build/outputs/formats/Aviator_AI_P703_Format_B.apk
-
-# Both deliverables are produced from the same verified build so every detection,
-# history-recovery and speed fix is present in APK A and APK B.

@@ -1,0 +1,38 @@
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    padding: 20px;
+    font-family: Arial, sans-serif;
+    background: #f4f6f8;
+    color: #111;
+}
+.container { width: 100%; max-width: 760px; margin: 0 auto; padding-top: 20px; }
+header { margin-bottom: 18px; }
+h1 { margin: 0 0 6px; }
+.card { background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+label { display: block; margin-bottom: 10px; font-weight: bold; }
+textarea { width: 100%; min-height: 190px; padding: 14px; font: inherit; border: 1px solid #bbb; border-radius: 8px; resize: vertical; }
+button, .button-link { display: block; width: 100%; margin-top: 12px; padding: 14px; font-size: 17px; font-weight: bold; border: 0; border-radius: 8px; text-align: center; text-decoration: none; cursor: pointer; background: #111; color: #fff; }
+button:disabled { opacity: .6; cursor: wait; }
+.status { margin-top: 14px; min-height: 20px; font-size: 14px; }
+#result { margin-top: 14px; padding: 15px; min-height: 80px; background: #f4f6f8; border-radius: 8px; white-space: pre-wrap; overflow-x: auto; }
+
+.header-row { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+.header-row p { margin-top:6px; }
+.icon-button { width:auto; margin:0; padding:10px 12px; font-size:14px; }
+.controls { display:flex; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap; }
+.file-button { display:inline-block; width:auto; margin:0; padding:10px 12px; border:1px solid #bbb; border-radius:8px; cursor:pointer; }
+#file-status { font-size:14px; }
+.preview-image { width:90px; height:90px; object-fit:cover; border-radius:8px; margin:8px 8px 0 0; }
+.modal { position:fixed; inset:0; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; padding:16px; z-index:20; }
+.modal[hidden] { display:none; }
+.modal-card { position:relative; width:100%; max-width:520px; max-height:90vh; overflow:auto; background:#fff; border-radius:14px; padding:22px; box-shadow:0 8px 35px rgba(0,0,0,.25); }
+.modal-card h2 { margin-top:0; }
+.modal-close { position:absolute; right:10px; top:8px; width:auto; margin:0; background:transparent; color:#111; font-size:28px; padding:4px 10px; }
+.switch-row { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:16px 0; }
+.switch-row input { width:22px; height:22px; }
+.modal-card select, .modal-card input[type="file"] { width:100%; padding:11px; margin:6px 0 14px; }
+.voice-upload { margin-top:12px; padding:14px; border:1px solid #ddd; border-radius:10px; }
+.small { font-size:13px; line-height:1.45; color:#555; }
+.secondary-button { background:#666; }

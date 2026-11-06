@@ -1,32 +1,21 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
 }
 
 android {
-    namespace = "com.example.aviatorai"
+    namespace = "ai.freeapp.app"
     compileSdk = 35
 
     defaultConfig {
+        // Keep Aviator AI's existing application ID so this build updates the same app.
         applicationId = "com.example.aviatorai"
-        minSdk = 26
-        targetSdk = 28
+        minSdk = 27
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
     }
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("com.google.mlkit:text-recognition:16.0.1")
-    implementation("org.apache.commons:commons-math3:3.6.1")
+    implementation("androidx.webkit:webkit:1.10.0")
 }

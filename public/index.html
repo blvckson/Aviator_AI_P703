@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aviator AI</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="container">
+    <header>
+      <div class="header-row">
+        <div>
+          <h1>Aviator AI</h1>
+          <p>Deep reasoning, live research, screenshots, images and videos.</p>
+        </div>
+        <button id="narrator-settings-button" class="icon-button" type="button" aria-label="Narrator settings">🎙 Voice Clone</button>
+      </div>
+      </header>
+    <section class="card">
+      <label for="prompt">Ask Aviator AI anything</label>
+      <textarea id="prompt" rows="8" placeholder="Ask a complex question or attach a screenshot..."></textarea>
+      <div class="controls">
+        <label class="file-button">
+          📷 Add screenshot/image
+          <input id="image-input" type="file" accept="image/*" multiple hidden>
+        </label>
+        <span id="file-status">No image selected</span>
+      </div>
+      <div id="preview"></div>
+      <button id="build-button" type="button">Ask Aviator AI</button>
+      <div id="status" class="status" aria-live="polite"></div>
+      <div id="result" aria-live="polite"></div>
+      <div id="media"></div>
+      <div id="sources" class="sources" hidden>
+        <strong>Web sources used</strong>
+        <ul id="source-list"></ul>
+      </div>
+    </section>
+  </main>
+
+  <div id="narrator-modal" class="modal" hidden>
+    <div class="modal-card voice-modal-card" role="dialog" aria-modal="true" aria-labelledby="narrator-title">
+      <button id="narrator-close" class="modal-close" type="button" aria-label="Close">×</button>
+      <h2 id="narrator-title">Aviator AI Voice Clone</h2>
+      <p>Your voice-cloning studio runs locally inside the Aviator AI app. Voice samples are processed on this device; no commercial voice-cloning API is used.</p>
+      <iframe id="voice-studio-frame" title="Aviator AI local voice cloning studio" src="voice/index.html"></iframe>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
