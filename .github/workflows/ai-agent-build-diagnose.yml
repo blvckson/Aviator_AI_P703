@@ -1,0 +1,172 @@
+name: FreeApp AI Agent - Build and Diagnose
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - "feature/ai-agent-github-pipeline-retry"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: freeapp-agent-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate without changing application code
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout proposed revision
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Validate JavaScript syntax
+        id: jscheck
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          node --check worker.js 2>&1 | tee js-check.log
+          node --check app.js 2>&1 | tee -a js-check.log
+
+      - name: Prepare bundled app and voice assets
+        id: assets
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          rm -rf app/src/main/assets
+          mkdir -p app/src/main/assets
+          cp -R public/. app/src/main/assets/
+
+          VOICE_DIR="app/src/main/assets/voice"
+          MODEL_DIR="$VOICE_DIR/onnx/english_2026-04"
+          ORT_DIR="$VOICE_DIR/ort"
+          mkdir -p "$MODEL_DIR" "$ORT_DIR"
+
+          curl -fL --retry 3 -o "$VOICE_DIR/sentencepiece.js" "https://raw.githubusercontent.com/hemanth/pocket-voice/main/sentencepiece.js"
+          curl -fL --retry 3 -o "$ORT_DIR/ort.min.js" "https://unpkg.com/onnxruntime-web@1.18.0/dist/ort.min.js"
+          curl -fL --retry 3 -o "$ORT_DIR/ort-wasm.wasm" "https://unpkg.com/onnxruntime-web@1.18.0/dist/ort-wasm.wasm"
+
+          BASE="https://huggingface.co/spaces/KevinAHM/pocket-tts-web/resolve/main/onnx/english_2026-04"
+          for f in bundle.json tokenizer.model bos_before_voice.npy mimi_encoder_int8.onnx text_conditioner_int8.onnx flow_lm_main_int8.onnx flow_lm_flow_int8.onnx mimi_decoder_int8.onnx; do
+            curl -fL --retry 3 -o "$MODEL_DIR/$f" "$BASE/$f"
+          done
+
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Build debug APK and run available unit tests
+        id: gradle
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          gradle assembleDebug testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee gradle-agent.log
+
+      - name: Write diagnostic summary
+        if: always()
+        env:
+          JS_OUTCOME: ${{ steps.jscheck.outcome }}
+          ASSETS_OUTCOME: ${{ steps.assets.outcome }}
+          GRADLE_OUTCOME: ${{ steps.gradle.outcome }}
+          COMMIT_SHA: ${{ github.sha }}
+          BRANCH_NAME: ${{ github.ref_name }}
+        run: |
+          {
+            echo "# FreeApp AI Agent validation report"
+            echo
+            echo "- Revision: `$COMMIT_SHA`"
+            echo "- Branch: `$BRANCH_NAME`"
+            echo "- JavaScript syntax: **$JS_OUTCOME**"
+            echo "- Asset preparation: **$ASSETS_OUTCOME**"
+            echo "- Android build and unit tests: **$GRADLE_OUTCOME**"
+            echo
+            echo "## Interpretation"
+            if [ "$JS_OUTCOME" = "success" ] && [ "$ASSETS_OUTCOME" = "success" ] && [ "$GRADLE_OUTCOME" = "success" ]; then
+              echo "All configured checks passed. This is a build/test result, not proof that every runtime feature works on a physical device."
+            else
+              echo "One or more checks failed. See the uploaded logs to identify the failing step. This workflow intentionally does not edit source files or push unreviewed fixes."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Extract actionable failure details
+        if: always()
+        env:
+          JS_OUTCOME: ${{ steps.jscheck.outcome }}
+          ASSETS_OUTCOME: ${{ steps.assets.outcome }}
+          GRADLE_OUTCOME: ${{ steps.gradle.outcome }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+
+          patterns = re.compile(r"(?i)(error:|e: |failed|failure|exception|caused by:|could not resolve|could not find|duplicate class|manifest merger failed|unresolved reference|syntaxerror|typeerror|referenceerror)")
+          sections = [
+              ("JavaScript syntax", "js-check.log", os.getenv("JS_OUTCOME", "not run")),
+              ("Android build and tests", "gradle-agent.log", os.getenv("GRADLE_OUTCOME", "not run")),
+          ]
+          lines = [
+              "# Build failure diagnosis", "",
+              f"- JavaScript syntax: **{os.getenv('JS_OUTCOME', 'not run')}**",
+              f"- Asset preparation: **{os.getenv('ASSETS_OUTCOME', 'not run')}**",
+              f"- Android build and tests: **{os.getenv('GRADLE_OUTCOME', 'not run')}**",
+              "", "## Matching log excerpts", "",
+          ]
+          for title, filename, outcome in sections:
+              lines.extend([f"### {title} ({outcome})", ""])
+              path = Path(filename)
+              if not path.exists():
+                  lines.extend(["No log file was produced.", ""])
+                  continue
+              matches = [f"{i}: {line[:500]}" for i, line in enumerate(
+                  path.read_text(encoding="utf-8", errors="replace").splitlines(), 1
+              ) if patterns.search(line)]
+              lines.extend(matches[-40:] if matches else ["No common error signature found; inspect the complete log."])
+              lines.append("")
+          lines.extend([
+              "## Repair boundary", "",
+              "These excerpts are diagnostic hints, not proof of root cause. Review full logs and source diff before proposing a repair. This workflow does not change source files.",
+          ])
+          report = "\n".join(lines) + "\n"
+          Path("build-diagnosis.md").write_text(report, encoding="utf-8")
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text(report, encoding="utf-8")
+          PY
+
+      - name: Upload diagnostic logs, report, and APK if produced
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: freeapp-agent-diagnostics-${{ github.run_number }}
+          if-no-files-found: warn
+          path: |
+            build-diagnosis.md
+            js-check.log
+            gradle-agent.log
+            app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Fail if validation did not pass
+        if: always()
+        env:
+          JS_OUTCOME: ${{ steps.jscheck.outcome }}
+          ASSETS_OUTCOME: ${{ steps.assets.outcome }}
+          GRADLE_OUTCOME: ${{ steps.gradle.outcome }}
+        run: |
+          test "$JS_OUTCOME" = "success"
+          test "$ASSETS_OUTCOME" = "success"
+          test "$GRADLE_OUTCOME" = "success"

@@ -1,0 +1,13 @@
+{
+  "name": "freeapp-ai",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@cloudflare/puppeteer": "1.4.0"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "check:js": "node --check public/app.js && node --check public/coding-agent-guard.js"
+  }
+}

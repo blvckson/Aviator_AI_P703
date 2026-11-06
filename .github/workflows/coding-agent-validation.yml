@@ -1,0 +1,21 @@
+name: Coding Agent Validation
+on:
+  pull_request:
+    paths: ["public/app.js", "public/coding-agent-guard.js", "public/index.html", "tests/**", "package.json", ".github/workflows/coding-agent-validation.yml"]
+  push:
+    branches: [main]
+    paths: ["public/app.js", "public/coding-agent-guard.js", "public/index.html", "tests/**", "package.json", ".github/workflows/coding-agent-validation.yml"]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check JavaScript syntax
+        run: npm run check:js
+      - name: Run coding-agent safety tests
+        run: npm test

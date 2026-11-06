@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FreeApp AI</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="container">
+    <header>
+      <div class="header-row">
+        <div>
+          <h1>FreeApp AI</h1>
+          <p>Warm, detailed answers, topic continuity, live research, screenshots and images.</p>
+        </div>
+        <button id="menu-toggle" class="menu-toggle" type="button" aria-label="Open all functions" aria-expanded="false" aria-controls="function-menu">⋮</button>
+      </div>
+      </header>
+    <nav id="function-menu" class="function-menu" hidden aria-label="All FreeApp AI functions"><div class="function-menu-heading"><strong>All functions</strong><button id="menu-close" class="menu-close" type="button" aria-label="Close functions">×</button></div><p class="small">Open a function below. Your main typing area and AI response remain visible.</p><div id="function-menu-content"><div class="narrator-buttons"><button id="builtin-narrator-button" class="icon-button" type="button">🔊 Built-in Narrator</button><button id="narrator-settings-button" class="icon-button" type="button" aria-label="Voice clone narrator">🎙 Voice Clone Narrator</button></div></div></nav>
+    <section class="card">
+      <label for="prompt">Ask FreeApp AI anything</label>
+      <textarea id="prompt" rows="8" placeholder="Ask a complex question or attach a screenshot..."></textarea>
+      <div class="controls">
+        <label class="file-button">
+          📷 Add screenshot/image
+          <input id="image-input" type="file" accept="image/*" multiple hidden>
+        </label>
+        <span id="file-status">No image selected</span>
+      </div>
+      <div id="preview"></div>
+      <button id="build-button" type="button">Ask FreeApp AI</button>
+      <button id="clear-conversation-button" class="secondary-button" type="button">Start New Conversation / Clear Context</button>
+      <p id="conversation-note" class="small" aria-live="polite">Ask follow-up questions without repeating the whole topic. Context is stored on this device.</p>
+      <div id="status" class="status" aria-live="polite"></div>
+      <div id="result" aria-live="polite"></div>
+      <div id="media"></div>
+      <div id="sources" class="sources" hidden>
+        <strong>Web sources used</strong>
+        <ul id="source-list"></ul>
+      </div>
+    </section>
+    <section class="card website-card">
+      <h2>Website & Online App Access</h2>
+      <p>Ask FreeApp AI to inspect a public website, follow links, fill fields, select options, and use visible page controls.</p>
+      <label for="website-url">Website address</label>
+      <input id="website-url" type="url" placeholder="https://example.com" autocomplete="url">
+      <label for="website-task">What should FreeApp AI do there?</label>
+      <textarea id="website-task" rows="4" placeholder="Example: Read the page and summarise the main points, or fill this public contact form with the message I provide."></textarea>
+      <p class="small">FreeApp AI can inspect pages and perform multi-step actions, re-checking the page as it changes. It detects login and human-verification challenges and pauses rather than bypassing them. Do not paste passwords, one-time codes, cookies, or secret keys. Cloud browser sessions are temporary; persistent authorized logins, Tor access, and control of apps installed on your phone are not enabled yet.</p>
+      <button id="website-run-button" type="button">Open Website & Perform Task</button>
+      <div id="website-status" class="status" aria-live="polite"></div>
+      <div id="website-result" class="website-result" aria-live="polite"></div>
+    </section>
+    <section class="card github-coder-card" id="github-coder-card">
+      <h2>GitHub Coding Agent</h2>
+      <p>This is a separate, token-authorized tool—not the normal chat. It can inspect the selected repository, ask FreeApp AI to prepare code changes, commit them to a new branch, open a pull request, and report GitHub Actions checks. The normal chat cannot access your private repository or use this token.</p>
+      <label for="github-repo">GitHub repository (owner/name)</label>
+      <input id="github-repo" type="text" placeholder="your-account/your-repository" autocomplete="off">
+      <label for="github-token">GitHub access token</label>
+      <input id="github-token" type="password" placeholder="Paste a fine-grained token for this repository" autocomplete="off">
+      <p class="small">Use a fine-grained token limited to the chosen repository with Contents: Read and write, Pull requests: Read and write, and Actions: Read (to inspect build/check results). The token is sent directly from this screen to GitHub over HTTPS; it is not sent to the AI inference endpoint and is not saved by this page. Clear it when finished. Never paste a password or token into the normal AI chat.</p>
+      <label for="github-coding-task">What should FreeApp AI code?</label>
+      <textarea id="github-coding-task" rows="5" placeholder="Example: Fix the login crash, add tests, and preserve all existing features."></textarea>
+      <div class="controls">
+        <button id="github-coding-run" type="button">Code Repository & Open Pull Request</button>
+        <button id="github-coding-clear" class="secondary-button" type="button">Clear Token</button>
+      </div>
+      <div id="github-coding-status" class="status" aria-live="polite">No repository changes are made until you run a coding task. Changes are committed to a new branch and submitted as a pull request—not directly to the default branch. The agent does not merge, deploy, or publish releases. Build/test results are reported only when GitHub Actions returns evidence.</div>
+      <div id="github-coding-result" class="website-result" aria-live="polite"></div>
+    </section>
+    <section class="card phone-control-card">
+      <h2>Phone Control (Android)</h2>
+      <p>FreeApp AI can open supported apps and perform visible screen actions after you enable its accessibility service. Enable it yourself in Android settings and keep the phone unlocked while actions run.</p>
+      <div class="controls">
+        <button id="phone-enable-button" type="button">Enable Phone Control</button>
+        <button id="phone-gmail-button" class="secondary-button" type="button">Open Gmail</button>
+        <button id="phone-settings-button" class="secondary-button" type="button">Open Settings</button>
+        <button id="phone-updates-button" class="secondary-button" type="button">Check System Updates</button>
+      </div>
+      <label for="phone-task">Phone task / screen actions</label>
+      <textarea id="phone-task" rows="4" placeholder="Examples: open Gmail&#10;tap: Search mail&#10;type: receipts from example@example.com&#10;tap: Search&#10;scroll down"></textarea>
+      <p class="small">For screen actions, enter one action per line. Supported: open Gmail/Settings/Chrome/Play Store/Files; tap: visible label; type: ordinary text into the currently focused field; scroll up/down; back; home. Actions are sent to the current screen, so watch the phone. FreeApp AI will not type passwords, one-time codes, security codes or card details. You must sign in yourself and approve sending emails, payments, deleting data, security changes, or other consequential actions. System updates still require Android's own confirmation.</p>
+      <div class="controls">
+        <button id="phone-run-button" type="button">Run Phone Actions</button>
+        <button id="phone-stop-button" class="secondary-button" type="button">Stop Pending Actions</button>
+      </div>
+      <div id="phone-status" class="status" aria-live="polite">Phone control is available only in the Android app after you enable the service.</div>
+    </section>
+  </main>
+
+  <div id="builtin-narrator-modal" class="modal" hidden><div class="modal-card voice-modal-card" role="dialog" aria-modal="true"><button id="builtin-narrator-close" class="modal-close" type="button">×</button><h2>Built-in Narrator</h2><p>Uses the Android device Text-to-Speech engine. This is separate from Voice Clone Narrator.</p><div class="narrator-controls"><button id="builtin-speak-button" type="button">🔊 Read Latest Answer</button><button id="builtin-stop-button" type="button">⏹ Stop</button><label><input id="builtin-auto-button" type="checkbox"> Automatically read AI answers</label><p id="narrator-status" class="status" aria-live="polite">Ready to read the latest answer.</p></div></div></div>
+
+  <div id="narrator-modal" class="modal" hidden>
+    <div class="modal-card voice-modal-card" role="dialog" aria-modal="true" aria-labelledby="narrator-title">
+      <button id="narrator-close" class="modal-close" type="button" aria-label="Close">×</button>
+      <h2 id="narrator-title">FreeApp AI Voice Clone</h2>
+      <p>Your voice-cloning studio runs locally inside the FreeApp AI app. Voice samples are processed on this device; no commercial voice-cloning API is used.</p>
+      <iframe id="voice-studio-frame" title="FreeApp AI local voice cloning studio" src="voice/index.html"></iframe>
+    </div>
+  </div>
+
+  <script src="coding-agent-guard.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

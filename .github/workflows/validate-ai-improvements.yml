@@ -1,0 +1,29 @@
+name: Validate FreeApp AI Improvements
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, qwen-parity-improvements]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check JavaScript syntax
+        run: node --check worker.js
+      - name: Run regression tests
+        run: node --test tests/*.test.cjs
+      - name: Check package metadata
+        run: node -e "const p=require('./package.json'); if(!p.dependencies || !p.dependencies['@cloudflare/puppeteer']) process.exit(1); console.log('package metadata OK')"

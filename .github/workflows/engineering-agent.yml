@@ -1,0 +1,196 @@
+name: FreeApp AI - Engineering Agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "Describe the coding or repair task for FreeApp AI"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: freeapp-engineering-agent
+  cancel-in-progress: false
+
+jobs:
+  engineer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout current main revision
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Worker dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Generate repository-aware patch
+        env:
+          TASK: ${{ inputs.task }}
+          ENGINEERING_ENDPOINT: https://freeapp-ai.lovesongmelodies.workers.dev/api/engineering/propose
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os
+          with open("engineering-request.json", "w") as f:
+              json.dump({"task": os.environ["TASK"]}, f)
+          PY
+          CODE="$(curl -sS --max-time 150 -o engineering-response.json -w '%{http_code}' \
+            -H 'Content-Type: application/json' -X POST "$ENGINEERING_ENDPOINT" \
+            --data-binary @engineering-request.json)"
+          if [ "$CODE" -lt 200 ] || [ "$CODE" -ge 300 ]; then
+            echo "Engineering endpoint failed with HTTP $CODE"
+            cat engineering-response.json
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json, sys
+          from pathlib import Path
+          data = json.loads(Path("engineering-response.json").read_text())
+          if data.get("status") != "ready-for-isolated-validation":
+              print(data.get("reason") or data.get("error") or "No safe patch was generated.")
+              sys.exit(1)
+          patch = data.get("patch")
+          if not isinstance(patch, str) or not patch.strip():
+              print("Endpoint returned no patch.")
+              sys.exit(1)
+          Path("engineering.patch").write_text(patch.rstrip() + "\n")
+          Path("engineering-base-sha.txt").write_text(str(data.get("base_sha", "")))
+          Path("engineering-changed-paths.json").write_text(json.dumps(data.get("changed_paths", [])))
+          PY
+
+      - name: Verify patch base and allowed file scope
+        id: patch
+        run: |
+          set -euo pipefail
+          BASE_SHA="$(cat engineering-base-sha.txt)"
+          CURRENT_SHA="$(git rev-parse HEAD)"
+          [ "$BASE_SHA" = "$CURRENT_SHA" ] || {
+            echo "Patch was generated against $BASE_SHA but checkout is $CURRENT_SHA; refusing stale patch."
+            exit 1
+          }
+          git apply --check engineering.patch
+          git apply engineering.patch
+          git diff --check
+          python3 - <<'PY'
+          import subprocess, sys
+          paths = subprocess.check_output(["git", "diff", "--name-only"], text=True).splitlines()
+          allowed = {
+              "worker.js", "package.json", "wrangler.toml",
+              "public/app.js", "public/index.html", "public/style.css",
+              "public/voice/index.html", "public/voice/app.js", "public/voice/style.css",
+              "app/build.gradle", "app/src/main/AndroidManifest.xml"
+          }
+          if not paths:
+              print("Patch made no changes.")
+              sys.exit(1)
+          bad = [p for p in paths if p not in allowed or ".." in p.split("/")]
+          if bad:
+              print("Disallowed paths:", bad)
+              sys.exit(1)
+          print("Validated paths:", paths)
+          with open("changed-paths.txt", "w") as f:
+              f.write("\n".join(paths))
+          PY
+          echo "valid=true" >> "$GITHUB_OUTPUT"
+
+      - name: Validate JavaScript and package metadata
+        if: steps.patch.outputs.valid == 'true'
+        run: |
+          set -euo pipefail
+          while IFS= read -r file; do
+            case "$file" in
+              *.js) node --check "$file" ;;
+              package.json) node -e "JSON.parse(require('fs').readFileSync('package.json','utf8'))" ;;
+            esac
+          done < changed-paths.txt
+          node --check worker.js
+
+      - name: Set up JDK 17
+        if: steps.patch.outputs.valid == 'true' && (contains(inputs.task, 'Android') || contains(inputs.task, 'APK') || contains(inputs.task, 'app/src') || contains(inputs.task, 'build'))
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        if: steps.patch.outputs.valid == 'true' && (contains(inputs.task, 'Android') || contains(inputs.task, 'APK') || contains(inputs.task, 'app/src') || contains(inputs.task, 'build') || contains(inputs.task, 'UI'))
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Prepare Android assets and run build/tests
+        if: steps.patch.outputs.valid == 'true' && (contains(inputs.task, 'Android') || contains(inputs.task, 'APK') || contains(inputs.task, 'app/src') || contains(inputs.task, 'build') || contains(inputs.task, 'UI'))
+        run: |
+          set -euo pipefail
+          rm -rf app/src/main/assets
+          mkdir -p app/src/main/assets
+          cp -R public/. app/src/main/assets/
+          VOICE_DIR="app/src/main/assets/voice"
+          MODEL_DIR="$VOICE_DIR/onnx/english_2026-04"
+          ORT_DIR="$VOICE_DIR/ort"
+          mkdir -p "$MODEL_DIR" "$ORT_DIR"
+          curl -fL --retry 3 -o "$VOICE_DIR/sentencepiece.js" "https://raw.githubusercontent.com/hemanth/pocket-voice/main/sentencepiece.js"
+          curl -fL --retry 3 -o "$ORT_DIR/ort.min.js" "https://unpkg.com/onnxruntime-web@1.18.0/dist/ort.min.js"
+          curl -fL --retry 3 -o "$ORT_DIR/ort-wasm.wasm" "https://unpkg.com/onnxruntime-web@1.18.0/dist/ort-wasm.wasm"
+          BASE="https://huggingface.co/spaces/KevinAHM/pocket-tts-web/resolve/main/onnx/english_2026-04"
+          for f in bundle.json tokenizer.model bos_before_voice.npy mimi_encoder_int8.onnx text_conditioner_int8.onnx flow_lm_main_int8.onnx flow_lm_flow_int8.onnx mimi_decoder_int8.onnx; do
+            curl -fL --retry 3 -o "$MODEL_DIR/$f" "$BASE/$f"
+          done
+          gradle assembleDebug testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Create review branch and pull request after successful validation
+        if: success() && steps.patch.outputs.valid == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TASK: ${{ inputs.task }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          BRANCH="ai-engineering/run-${GITHUB_RUN_ID}"
+          git checkout -b "$BRANCH"
+          # Patch scope was validated above; stage only the actual changes.
+          git add -A
+          git diff --cached --quiet && { echo "No changes to commit."; exit 1; }
+          git commit -m "AI engineering proposal: ${TASK:0:60}"
+          git push origin "$BRANCH"
+          gh pr create --repo "$GH_REPO" --base main --head "$BRANCH" \
+            --title "FreeApp AI engineering proposal: ${TASK:0:65}" \
+            --body "## AI-generated engineering proposal
+
+          **Task:** $TASK
+
+          - Generated from the deployed repository-aware engineering endpoint.
+          - Patch base SHA was checked against the exact checked-out revision.
+          - Patch scope and whitespace were validated.
+          - JavaScript syntax checks passed.
+          - Android build and unit tests were run when the task requested Android/build work.
+
+          This pull request is not automatically merged. Review the changes and runtime behaviour before merging."
+
+      - name: Upload engineering evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: freeapp-engineering-agent-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            engineering-request.json
+            engineering-response.json
+            engineering.patch
+            engineering-base-sha.txt
+            changed-paths.txt

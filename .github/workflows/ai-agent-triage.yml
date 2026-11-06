@@ -1,0 +1,126 @@
+name: FreeApp AI Agent - Failure Triage
+
+on:
+  workflow_run:
+    workflows: ["FreeApp AI Agent - Build and Diagnose"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Diagnostic workflow run ID to analyze"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Select diagnostic run
+        id: source
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          MANUAL_RUN_ID: ${{ inputs.run_id }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "run_id=$MANUAL_RUN_ID" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_id=$EVENT_RUN_ID" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve source artifact name
+        id: artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_RUN_ID: ${{ steps.source.outputs.run_id }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          RUN_JSON="$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$REPOSITORY/actions/runs/$SOURCE_RUN_ID")"
+          RUN_NUMBER="$(printf '%s' "$RUN_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["run_number"])')"
+          echo "artifact_name=freeapp-agent-diagnostics-$RUN_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Download diagnostic artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.artifact.outputs.artifact_name }}
+          run-id: ${{ steps.source.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Diagnose failures and write actionable report
+        env:
+          SOURCE_RUN_ID: ${{ steps.source.outputs.run_id }}
+        run: |
+          python3 <<'PY'
+          import glob, json, os, re
+          from pathlib import Path
+
+          files = [Path(p) for p in glob.glob("**/*", recursive=True) if Path(p).is_file()]
+          log_text = ""
+          for path in files:
+              if path.suffix.lower() in {".log", ".txt", ".json"}:
+                  try:
+                      log_text += "\\n" + path.read_text(errors="replace")[-250000:]
+                  except OSError:
+                      pass
+
+          rules = [
+              ("JavaScript syntax", r"SyntaxError|Unexpected token|Cannot use import statement outside a module",
+               "Inspect the indicated JavaScript file and line. Fix the syntax or module configuration, then rerun node --check."),
+              ("Gradle dependency or plugin resolution", r"Could not resolve|Could not find .*\\.|Plugin .* was not found|UnknownHostException",
+               "Check the exact dependency/plugin coordinates and repository configuration. Retry only if the log indicates a transient network failure."),
+              ("Android SDK or Java configuration", r"Android SDK not found|SDK location not found|requires Java|Unsupported class file major version",
+               "Align the workflow JDK and Android SDK configuration with the project's Gradle/Android Gradle Plugin requirements."),
+              ("Kotlin or Java compilation", r"Compilation error|e: file:|error: cannot find symbol|unresolved reference",
+               "Use the first compiler error as the root cause; inspect the referenced file and line before changing downstream errors."),
+              ("Asset download or packaging", r"curl: \\(22\\)|HTTP error 404|Could not resolve host|No such file or directory|failed to find .*asset",
+               "Verify the source URL and expected asset path. Do not silently omit required voice/model assets; confirm file sizes and checksums where available."),
+              ("Unit test failure", r"FAILED|There were failing tests|AssertionError|Tests run: .*Failures: [1-9]",
+               "Inspect the first failing test and assertion. Fix the regression or update the test only if its expectation is demonstrably incorrect."),
+              ("Memory or runner exhaustion", r"Java heap space|OutOfMemoryError|Process completed with exit code 137|No space left on device",
+               "Identify whether memory, disk, or timeout is responsible. Reduce redundant asset copies or tune Gradle memory only after confirming the resource limit.")
+          ]
+
+          findings = []
+          for title, pattern, remedy in rules:
+              hits = re.findall(pattern, log_text, flags=re.I)
+              if hits:
+                  findings.append({"category": title, "evidence": list(dict.fromkeys(str(h) for h in hits))[:5], "next_step": remedy})
+
+          report = {
+              "report": "FreeApp AI automated failure triage",
+              "source_run_id": os.environ.get("SOURCE_RUN_ID", ""),
+              "diagnostic_logs_found": bool(log_text.strip()),
+              "findings": findings,
+              "limitations": [
+                  "This stage classifies log evidence and recommends next steps; it does not edit or commit application source.",
+                  "If no logs were available, inspect the source workflow run directly.",
+                  "A successful CI build does not guarantee every feature works on the target phone."
+              ],
+              "result": "Likely failure categories identified" if findings else ("No known failure signature found in downloaded logs" if log_text else "No diagnostic logs were available to analyze")
+          }
+          Path("agent-triage-report.json").write_text(json.dumps(report, indent=2))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write("# FreeApp AI Agent triage\\n\\n")
+              f.write(f"- Source run: {report['source_run_id']}\\n")
+              f.write(f"- Logs available: {report['diagnostic_logs_found']}\\n")
+              f.write(f"- Result: {report['result']}\\n\\n")
+              for finding in findings:
+                  f.write(f"## {finding['category']}\\n\\n")
+                  f.write(f"- Evidence: `{', '.join(finding['evidence'])}`\\n")
+                  f.write(f"- Next step: {finding['next_step']}\\n\\n")
+              if not findings:
+                  f.write("No recognized failure pattern was found. Open the source run and inspect its step logs.\\n")
+          PY
+
+      - name: Upload triage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: freeapp-agent-triage-report
+          path: agent-triage-report.json

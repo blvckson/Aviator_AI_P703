@@ -1,0 +1,162 @@
+name: FreeApp AI Benchmark
+
+on:
+  workflow_run:
+    workflows: ["Deploy FreeApp AI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Run five-task live benchmark against deployed FreeApp AI
+        env:
+          API_BASE: https://freeapp-ai.lovesongmelodies.workers.dev
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const base = process.env.API_BASE;
+          const cases = [
+            {
+              id: 'reasoning',
+              prompt: 'Solve this carefully and give the conclusion with a short explanation. Three people—A, B, and C—make these statements: A says “B is lying”; B says “C is lying”; C says “A and B are both lying.” Exactly one person tells the truth. Determine who tells the truth and show a consistency check.',
+              criteria: [
+                ['mentions A', /\bA\b/i],
+                ['mentions B', /\bB\b/i],
+                ['mentions C', /\bC\b/i],
+                ['gives consistency reasoning', /because|therefore|if .*truth|consistent|contradict/i],
+                ['states exactly one truth-teller or notes ambiguity', /exactly one|only one|no consistent|impossible|ambiguous/i]
+              ]
+            },
+            {
+              id: 'research',
+              prompt: 'Research the current official Cloudflare Workers AI model options relevant to reasoning and software development. Compare the configured Llama 3.3 70B Instruct FP8 Fast with at least two credible alternatives available in the current Cloudflare catalog. Use live sources, give model IDs, distinguish verified facts from your recommendation, and include source URLs. If current sources cannot be retrieved, say so.',
+              criteria: [
+                ['names configured model', /llama-3\.3-70b-instruct-fp8-fast/i],
+                ['compares alternatives', /kimi|deepseek|glm|qwen|gemma/i],
+                ['gives trade-offs or recommendation', /recommend|trade-off|tradeoff|however|whereas|better for|cost/i],
+                ['includes source URLs/citations', /https?:\/\//i],
+                ['API reports at least two usable research sources', null]
+              ]
+            },
+            {
+              id: 'programming',
+              prompt: 'Write complete, production-minded Python code for stable_topological_sort(nodes, edges). Preserve input node order whenever multiple nodes are currently available, return a deterministic ordering, detect and raise ValueError on a cycle, validate unknown edge endpoints, and include at least four runnable unit tests covering normal ordering, stable tie-breaking, unknown endpoints, and cycles. Explain complexity.',
+              criteria: [
+                ['contains runnable code', /\x60\x60\x60python|def stable_topological_sort/i],
+                ['cycle detection', /cycle|in-degree|indegree/i],
+                ['unknown endpoint validation', /unknown|not in nodes|endpoint/i],
+                ['at least four tests', /test_.*\(|unittest|pytest/i],
+                ['complexity analysis', /O\(|complexity/i]
+              ]
+            },
+            {
+              id: 'debugging',
+              prompt: 'Debug this JavaScript function. It is supposed to return only active users, but it returns an empty/wrong list or behaves inconsistently. Explain the root cause and provide corrected code plus a small test.\n\nasync function activeUsers(ids) {\n  const users = ids.map(async (id) => await fetchUser(id));\n  return users.filter((user) => user.active);\n}\n\nAssume fetchUser(id) returns a Promise<User>. Do not change the intended behaviour.',
+              criteria: [
+                ['identifies promises in map', /promise|array of promises|async.*map/i],
+                ['uses Promise.all or equivalent', /Promise\.all|await.*all|for await/i],
+                ['provides corrected code', /\x60\x60\x60javascript|\x60\x60\x60js|async function activeUsers/i],
+                ['includes a test or expected result', /test|assert|expected|console\.log/i],
+                ['explains root cause', /root cause|filter.*promise|promise.*filter|active.*undefined/i]
+              ]
+            },
+            {
+              id: 'complex-app-building',
+              prompt: 'Design a build-ready MVP for an Android offline-first inventory app for a small shop, with barcode/manual item entry, stock-in/out, low-stock alerts, CSV export, and optional later cloud sync. Deliver: (1) module architecture and data flow, (2) SQLite schema with constraints, (3) Kotlin/Android implementation plan and key code/pseudocode for a stock transaction, (4) offline/sync conflict strategy, (5) validation/error handling, (6) at least eight acceptance tests, and (7) build/run steps. State assumptions and do not claim code was compiled.',
+              criteria: [
+                ['architecture and data flow', /architecture|data flow|module/i],
+                ['database schema', /sqlite|schema|CREATE TABLE|entity/i],
+                ['stock transaction logic', /transaction|stock.?in|stock.?out|quantity/i],
+                ['offline/sync conflict strategy', /offline|sync|conflict|idempot/i],
+                ['validation and errors', /validation|error handling|constraint/i],
+                ['at least eight acceptance tests', /acceptance test|test case|given.*when.*then/i],
+                ['build/run instructions', /gradle|build|run|assembleDebug/i],
+                ['explicitly avoids false compilation claim', /not compiled|not run|not tested|cannot claim|should be tested/i]
+              ]
+            }
+          ];
+
+          const results = [];
+          const qualityThreshold = 98;
+          for (const item of cases) {
+            const started = Date.now();
+            try {
+              const response = await fetch(base + '/api/generate', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ prompt: item.prompt, history: [], memorySummary: '', images: [] }),
+                signal: AbortSignal.timeout(150000)
+              });
+              const data = await response.json().catch(() => ({}));
+              const answer = String(data.result || data.error || '');
+              const checks = item.criteria.map(([name, pattern]) => {
+                if (name === 'API reports at least two usable research sources') return { name, pass: data.researched === true && Array.isArray(data.sources) && data.sources.length >= 2 };
+                return { name, pass: pattern.test(answer) };
+              });
+              if (item.id === 'research' && Array.isArray(data.sources)) {
+                checks.find(c => c.name === 'includes source URLs/citations').pass =
+                  checks.find(c => c.name === 'includes source URLs/citations').pass &&
+                  data.sources.some(s => /^https?:\/\//i.test(String(s.url || '')));
+              }
+              checks.push({ name: 'non-empty usable assistant answer', pass: answer.trim().length >= 120 });
+              checks.push({ name: 'no leaked internal tool-call markup', pass: !/<dots_function_call>|tool_call|tool_response|function_call|assistant to=/i.test(answer) });
+              checks.push({ name: 'no provider-unavailable fallback presented as success', pass: !/all configured AI providers failed|service unavailable.*provider|AI providers? (?:are|is) unavailable/i.test(answer) });
+              results.push({
+                id: item.id, httpStatus: response.status, latencyMs: Date.now() - started,
+                researched: !!data.researched, sourceCount: Array.isArray(data.sources) ? data.sources.length : 0,
+                complexity: data.complexity || null, qualityReviewUsed: !!data.qualityReviewUsed,
+                checks, score: Math.round(100 * checks.filter(c => c.pass).length / checks.length),
+                answerExcerpt: answer.slice(0, 7000),
+                error: response.ok ? null : (data.detail || data.error || 'HTTP error')
+              });
+            } catch (error) {
+              results.push({
+                id: item.id, httpStatus: null, latencyMs: Date.now() - started,
+                researched: false, sourceCount: 0, complexity: null, qualityReviewUsed: false,
+                checks: item.criteria.map(([name]) => ({ name, pass: false })),
+                score: 0, answerExcerpt: '', error: String(error?.message || error)
+              });
+            }
+          }
+          const totalChecks = results.reduce((sum, r) => sum + r.checks.length, 0);
+          const passedChecks = results.reduce((sum, r) => sum + r.checks.filter(c => c.pass).length, 0);
+          const report = {
+            benchmark: 'FreeApp-AI five-task live smoke benchmark',
+            timestamp: new Date().toISOString(),
+            endpoint: base + '/api/generate',
+            note: 'Heuristic rubric checks are a first-pass smoke test, not expert human grading or a standardized benchmark. Programming/debugging output is not compiled or executed here.',
+            overallScore: Math.round(100 * passedChecks / totalChecks),
+            qualityThreshold,
+            passedChecks, totalChecks,
+            results
+          };
+          fs.writeFileSync('freeapp-ai-benchmark-results.json', JSON.stringify(report, null, 2));
+          console.log(JSON.stringify({
+            overallScore: report.overallScore, passedChecks, totalChecks,
+            results: results.map(({id, score, latencyMs, sourceCount, complexity, qualityReviewUsed, error, checks, answerExcerpt}) => ({
+              id, score, latencyMs, sourceCount, complexity, qualityReviewUsed, error,
+              failedChecks: checks.filter(c => !c.pass).map(c => c.name),
+              ...((id === 'research' || id === 'complex-app-building') ? { answerExcerpt: answerExcerpt.slice(0, 1800) } : {})
+            }))
+          }, null, 2));
+          if (results.some(r => r.httpStatus !== 200) || report.overallScore < qualityThreshold || results.some(r => r.score < qualityThreshold)) {
+            console.error('QUALITY GATE FAILED: every task must score at least ' + qualityThreshold + '% and overall score must meet the same threshold.');
+            process.exitCode = 1;
+          }
+          NODE
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreeApp-AI-benchmark-results
+          path: freeapp-ai-benchmark-results.json
+          if-no-files-found: warn

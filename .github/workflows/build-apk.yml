@@ -1,56 +1,62 @@
-name: Build Aviator AI P703
+name: Build Aviator AI APK
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Java 17
+      - name: Set up JDK
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+      - name: Prepare bundled Aviator AI assets
+        run: |
+          set -e
+          rm -rf app/src/main/assets
+          mkdir -p app/src/main/assets
+          cp -R public/. app/src/main/assets/
+
+          VOICE_DIR="app/src/main/assets/voice"
+          MODEL_DIR="$VOICE_DIR/onnx/english_2026-04"
+          ORT_DIR="$VOICE_DIR/ort"
+          mkdir -p "$MODEL_DIR" "$ORT_DIR"
+
+          echo "Downloading local voice-cloning runtime..."
+          curl -fL --retry 3 -o "$VOICE_DIR/sentencepiece.js" "https://raw.githubusercontent.com/hemanth/pocket-voice/main/sentencepiece.js"
+          curl -fL --retry 3 -o "$ORT_DIR/ort.min.js" "https://unpkg.com/onnxruntime-web@1.18.0/dist/ort.min.js"
+          curl -fL --retry 3 -o "$ORT_DIR/ort-wasm.wasm" "https://unpkg.com/onnxruntime-web@1.18.0/dist/ort-wasm.wasm"
+
+          echo "Downloading embedded English voice-cloning model..."
+          BASE="https://huggingface.co/spaces/KevinAHM/pocket-tts-web/resolve/main/onnx/english_2026-04"
+          for f in bundle.json tokenizer.model bos_before_voice.npy mimi_encoder_int8.onnx text_conditioner_int8.onnx flow_lm_main_int8.onnx flow_lm_flow_int8.onnx mimi_decoder_int8.onnx; do
+            curl -fL --retry 3 -o "$MODEL_DIR/$f" "$BASE/$f"
+          done
+
+          echo "Local voice assets:"
+          du -sh "$VOICE_DIR"
+          du -sh "$MODEL_DIR"
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-
-      - name: Show dependencies
-        run: gradle :app:dependencies --configuration debugRuntimeClasspath
+        with:
+          gradle-version: '8.7'
 
       - name: Build APK
-        run: gradle assembleDebug
+        run: gradle assembleDebug --no-daemon
 
-      - name: Prepare APK A and APK B
-        shell: bash
-        run: |
-          set -euo pipefail
-          APK="app/build/outputs/apk/debug/app-debug.apk"
-          test -s "$APK"
-          mkdir -p app/build/outputs/formats
-          cp "$APK" app/build/outputs/formats/Aviator_AI_P703_Format_A.apk
-          cp "$APK" app/build/outputs/formats/Aviator_AI_P703_Format_B.apk
-          ls -lh app/build/outputs/formats/*.apk
-
-      - name: Upload APK A
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Aviator_AI_P703_Format_A
-          path: app/build/outputs/formats/Aviator_AI_P703_Format_A.apk
+          name: Aviator-AI-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Upload APK B
-        uses: actions/upload-artifact@v4
-        with:
-          name: Aviator_AI_P703_Format_B
-          path: app/build/outputs/formats/Aviator_AI_P703_Format_B.apk
-
-# Both deliverables are produced from the same verified build so every detection,
-# history-recovery and speed fix is present in APK A and APK B.
+      # Final verified build trigger for the corrected Aviator-AI source.

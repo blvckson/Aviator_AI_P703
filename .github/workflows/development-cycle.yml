@@ -1,0 +1,262 @@
+name: FreeApp AI - Repeatable Development Cycle
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "Describe the feature, fix, or app-development task"
+        required: true
+        type: string
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: freeapp-development-cycle
+  cancel-in-progress: false
+
+jobs:
+  coordinate:
+    name: Research to verified PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - name: Validate task and record cycle start
+        id: start
+        env:
+          TASK: ${{ inputs.task }}
+        run: |
+          set -euo pipefail
+          if [ "${#TASK}" -lt 8 ] || [ "${#TASK}" -gt 4000 ]; then
+            echo "Task must contain between 8 and 4000 characters."
+            exit 1
+          fi
+          echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          {
+            echo "# FreeApp AI development cycle"
+            echo
+            echo "- Task: $TASK"
+            echo "- Research: queued"
+            echo "- Repository inspection and planning: queued"
+            echo "- Coding and file management: queued"
+            echo "- Commit and pull request: queued"
+            echo "- Build, tests, debugging and repair: queued"
+            echo "- Verification and release readiness: queued"
+            echo
+            echo "Changes remain isolated in a pull request. This coordinator never auto-merges or publishes a release."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dispatch repository-aware engineering stage
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TASK: ${{ inputs.task }}
+        run: |
+          set -euo pipefail
+          FULL_TASK="$TASK
+
+          REQUIRED DEVELOPMENT CYCLE:
+          1. Research relevant official documentation and current technical constraints; cite sources used and distinguish facts from assumptions.
+          2. Inspect the repository tree, architecture, relevant source files, tests, manifests, dependencies, and existing workflows before editing.
+          3. Plan the smallest complete implementation and identify regression risks.
+          4. Implement the change while preserving unrelated functionality.
+          5. Manage files explicitly: create/update/delete/rename only what is necessary.
+          6. Commit the complete change atomically on an isolated branch and open a pull request.
+          7. Build the Android debug APK and run available unit tests; do not skip Android validation.
+          8. Diagnose failures from actual logs, fix root causes, and rerun affected checks. If safe repair is not possible, report the blocker instead of guessing.
+          9. Verify the final diff, checks, APK artifact, and test evidence.
+          10. Prepare release notes and a release-ready APK artifact. Do not merge, deploy, publish a release, or change secrets automatically."
+          gh api "repos/$GH_REPO/actions/workflows/engineering-agent.yml/dispatches" \
+            --method POST -f ref=main -f "inputs[task]=$FULL_TASK"
+          echo "Repository-aware engineering workflow dispatched."
+
+      - name: Wait for engineering proposal and validation
+        id: engineering
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          STARTED_AT: ${{ steps.start.outputs.started_at }}
+        run: |
+          set -euo pipefail
+          RUN_ID=""
+          for attempt in $(seq 1 140); do
+            RUNS="$(gh api "repos/$GH_REPO/actions/workflows/engineering-agent.yml/runs?event=workflow_dispatch&per_page=20")"
+            RUN_ID="$(printf '%s' "$RUNS" | jq -r --arg start "$STARTED_AT" '
+              [.workflow_runs[] | select(.created_at >= $start)] |
+              sort_by(.created_at) | last | .id // empty')"
+            if [ -n "$RUN_ID" ]; then
+              STATUS="$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID" --jq '.status')"
+              CONCLUSION="$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID" --jq '.conclusion // ""')"
+              echo "Engineering run $RUN_ID: $STATUS $CONCLUSION"
+              if [ "$STATUS" = "completed" ]; then
+                echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+                echo "conclusion=$CONCLUSION" >> "$GITHUB_OUTPUT"
+                [ "$CONCLUSION" = "success" ] || {
+                  echo "Engineering proposal or its built-in validation failed. Inspect run $RUN_ID."
+                  exit 1
+                }
+                exit 0
+              fi
+            fi
+            sleep 15
+          done
+          echo "Engineering workflow did not finish within the 35-minute observation window."
+          exit 1
+
+      - name: Locate the generated pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ steps.engineering.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          BRANCH="ai-engineering/run-$RUN_ID"
+          PR_JSON="$(gh pr list --repo "$GH_REPO" --head "$BRANCH" --base main --state open --json number,url --limit 5)"
+          PR_NUMBER="$(printf '%s' "$PR_JSON" | jq -r '.[0].number // empty')"
+          PR_URL="$(printf '%s' "$PR_JSON" | jq -r '.[0].url // empty')"
+          if [ -z "$PR_NUMBER" ]; then
+            echo "Engineering run succeeded but no open PR was found for $BRANCH."
+            exit 1
+          fi
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "url=$PR_URL" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch isolated Android build and regression validation
+        id: validate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_BRANCH: ${{ steps.pr.outputs.branch }}
+        run: |
+          set -euo pipefail
+          echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          gh api "repos/$GH_REPO/actions/workflows/ai-agent-build-diagnose.yml/dispatches" \
+            --method POST -f "ref=$SOURCE_BRANCH"
+          echo "Dispatched isolated build/test validation for $SOURCE_BRANCH."
+
+      - name: Wait for isolated build, tests, and APK artifact
+        id: checks
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_BRANCH: ${{ steps.pr.outputs.branch }}
+          STARTED_AT: ${{ steps.validate.outputs.started_at }}
+        run: |
+          set -euo pipefail
+          VALIDATION_RUN=""
+          for attempt in $(seq 1 120); do
+            RUNS="$(gh api "repos/$GH_REPO/actions/workflows/ai-agent-build-diagnose.yml/runs?event=workflow_dispatch&per_page=30")"
+            VALIDATION_RUN="$(printf '%s' "$RUNS" | jq -r --arg branch "$SOURCE_BRANCH" --arg start "$STARTED_AT" '
+              [.workflow_runs[] | select(.head_branch == $branch and .created_at >= $start)] |
+              sort_by(.created_at) | last | .id // empty')"
+            if [ -n "$VALIDATION_RUN" ]; then
+              STATUS="$(gh api "repos/$GH_REPO/actions/runs/$VALIDATION_RUN" --jq '.status')"
+              CONCLUSION="$(gh api "repos/$GH_REPO/actions/runs/$VALIDATION_RUN" --jq '.conclusion // ""')"
+              echo "Validation run $VALIDATION_RUN: $STATUS $CONCLUSION"
+              if [ "$STATUS" = "completed" ]; then
+                echo "run_id=$VALIDATION_RUN" >> "$GITHUB_OUTPUT"
+                echo "conclusion=$CONCLUSION" >> "$GITHUB_OUTPUT"
+                [ "$CONCLUSION" = "success" ] || {
+                  echo "Build or regression checks failed. Inspect validation run $VALIDATION_RUN before repair."
+                  exit 1
+                }
+                exit 0
+              fi
+            fi
+            sleep 15
+          done
+          echo "Android validation did not finish within the 30-minute observation window."
+          exit 1
+
+      - name: Request autonomous repair proposal when validation fails
+        if: failure() && steps.checks.outputs.conclusion != 'success' && steps.checks.outputs.run_id != ''
+        id: repair
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          FAILED_RUN_ID: ${{ steps.checks.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          gh api "repos/$GH_REPO/actions/workflows/autonomous-repair.yml/dispatches" \
+            --method POST -f ref=main -f "inputs[run_id]=$FAILED_RUN_ID"
+          echo "Autonomous repair proposal workflow dispatched for failed validation run $FAILED_RUN_ID."
+
+      - name: Wait for repair diagnosis and proposal
+        if: failure() && steps.checks.outputs.conclusion != 'success' && steps.checks.outputs.run_id != ''
+        id: repair_result
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          STARTED_AT: ${{ steps.repair.outputs.started_at }}
+          FAILED_RUN_ID: ${{ steps.checks.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 100); do
+            RUNS="$(gh api "repos/$GH_REPO/actions/workflows/autonomous-repair.yml/runs?event=workflow_dispatch&per_page=20")"
+            REPAIR_RUN="$(printf '%s' "$RUNS" | jq -r --arg start "$STARTED_AT" '
+              [.workflow_runs[] | select(.created_at >= $start)] |
+              sort_by(.created_at) | last | .id // empty')"
+            if [ -n "$REPAIR_RUN" ]; then
+              STATUS="$(gh api "repos/$GH_REPO/actions/runs/$REPAIR_RUN" --jq '.status')"
+              CONCLUSION="$(gh api "repos/$GH_REPO/actions/runs/$REPAIR_RUN" --jq '.conclusion // ""')"
+              if [ "$STATUS" = "completed" ]; then
+                echo "run_id=$REPAIR_RUN" >> "$GITHUB_OUTPUT"
+                echo "conclusion=$CONCLUSION" >> "$GITHUB_OUTPUT"
+                PR_JSON="$(gh pr list --repo "$GH_REPO" --head "ai-repair/run-$FAILED_RUN_ID" --json number,url --limit 1)"
+                echo "pr_url=$(printf '%s' "$PR_JSON" | jq -r '.[0].url // empty')" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
+            sleep 15
+          done
+          echo "Repair proposal workflow did not finish within its observation window."
+          exit 1
+
+      - name: Record verified cycle result
+        if: always()
+        env:
+          ENGINEERING_RUN: ${{ steps.engineering.outputs.run_id }}
+          ENGINEERING_RESULT: ${{ steps.engineering.outputs.conclusion }}
+          PR_URL: ${{ steps.pr.outputs.url }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          CHECK_RESULT: ${{ steps.checks.outputs.conclusion }}
+          VALIDATION_RUN: ${{ steps.checks.outputs.run_id }}
+          REPAIR_RUN: ${{ steps.repair_result.outputs.run_id }}
+          REPAIR_RESULT: ${{ steps.repair_result.outputs.conclusion }}
+          REPAIR_PR: ${{ steps.repair_result.outputs.pr_url }}
+        run: |
+          {
+            echo
+            echo "## Cycle evidence"
+            echo
+            echo "- Engineering workflow run: ${ENGINEERING_RUN:-not completed}"
+            echo "- Engineering proposal/build result: ${ENGINEERING_RESULT:-failed or not reached}"
+            echo "- Pull request: ${PR_URL:-not created}"
+            echo "- Isolated build/test run: ${VALIDATION_RUN:-not completed}"
+            echo "- Build, unit-test and diagnostic result: ${CHECK_RESULT:-failed or not reached}"
+            echo "- Repair workflow: ${REPAIR_RUN:-not needed or not started}"
+            echo "- Repair proposal result: ${REPAIR_RESULT:-not needed or not completed}"
+            echo "- Repair PR: ${REPAIR_PR:-no repair PR created}"
+            echo
+            if [ "$CHECK_RESULT" = "success" ]; then
+              echo "**Result: ready for review.** Research, repository-aware implementation, isolated commit/PR, and a separately dispatched Android build/test validation completed. Review and merge the PR to start the main-branch APK build and deployment/benchmark workflows."
+              echo "The merge remains a human approval gate. Deployment and release publication are not performed by this coordinator."
+            else
+              echo "**Result: not verified.** The cycle requested a bounded repair proposal where possible. Inspect the failed validation and repair evidence. No merge or release is authorized."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload cycle evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: freeapp-development-cycle-${{ github.run_id }}
+          if-no-files-found: ignore
+          retention-days: 30
+          path: |
+            cycle-report.md

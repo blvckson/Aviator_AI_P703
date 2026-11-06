@@ -1,0 +1,62 @@
+name: Verify Kilo Free Gateway
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "worker.js"
+      - ".github/workflows/verify-kilo-gateway.yml"
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Probe Kilo model catalogue and chat completion
+        env:
+          KILO_BASE: https://api.kilo.ai/api/gateway
+        run: |
+          python - <<'PY'
+          import json, os, sys, urllib.request, urllib.error
+          base = os.environ["KILO_BASE"]
+          req = urllib.request.Request(base + "/models", headers={"User-Agent":"FreeAppAI-gateway-verification/1.0"})
+          try:
+              with urllib.request.urlopen(req, timeout=15) as response:
+                  catalogue = json.loads(response.read().decode("utf-8"))
+                  models = [item.get("id","") for item in catalogue.get("data",[])]
+                  print("MODEL_CATALOG_HTTP", response.status)
+                  print("CATALOGUE_MODEL_COUNT", len(models))
+                  matches = [m for m in models if "free" in m.lower() or "kilo-auto" in m.lower()]
+                  print("FREE_OR_AUTO_MODEL_EXAMPLES", json.dumps(matches[:30]))
+          except Exception as exc:
+              print("MODEL_CATALOG_FAILED", repr(exc))
+              sys.exit(1)
+          payload = {
+              "model":"kilo-auto/free",
+              "messages":[{"role":"user","content":"Reply with exactly: FREE_GATEWAY_OK"}],
+              "max_tokens":32,
+              "temperature":0
+          }
+          request = urllib.request.Request(
+              base + "/chat/completions",
+              data=json.dumps(payload).encode(),
+              headers={"Content-Type":"application/json","User-Agent":"FreeAppAI-gateway-verification/1.0"},
+              method="POST"
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  body = json.loads(response.read().decode("utf-8"))
+                  answer = body.get("choices",[{}])[0].get("message",{}).get("content")
+                  print("CHAT_COMPLETIONS_HTTP", response.status)
+                  print("RETURNED_MODEL", body.get("model"))
+                  print("ANSWER", str(answer)[:500])
+                  if not answer:
+                      print("FAIL: successful HTTP response contained no assistant text")
+                      sys.exit(1)
+          except urllib.error.HTTPError as exc:
+              detail = exc.read().decode("utf-8","replace")[:1200]
+              print("CHAT_COMPLETIONS_HTTP", exc.code)
+              print("CHAT_COMPLETIONS_ERROR", detail)
+              sys.exit(1)
+          except Exception as exc:
+              print("CHAT_COMPLETIONS_FAILED", repr(exc))
+              sys.exit(1)
+          PY

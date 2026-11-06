@@ -1,0 +1,164 @@
+name: FreeApp AI Head-to-Head Comparison
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/compare-ai-tools.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Compare FreeApp-AI against anonymous no-key AI endpoints
+        env:
+          FREEAPP_API: https://freeapp-ai.lovesongmelodies.workers.dev/api/generate
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const tasks = [
+            {
+              id: 'reasoning',
+              prompt: 'A bat and a ball cost $1.10 total. The bat costs $1.00 more than the ball. How much does the ball cost? Explain the calculation.',
+              checks: [
+                ['correct answer', /\$?0\.05|5 cents/i],
+                ['explains equation or calculation', /equation|0\.05|1\.05|1\.10|subtract|difference/i]
+              ]
+            },
+            {
+              id: 'debugging',
+              prompt: 'Explain the bug and provide corrected JavaScript code: async function activeUsers(ids) { const users = ids.map(async id => await fetchUser(id)); return users.filter(user => user.active); } Assume fetchUser returns Promise<User>. Include a small test or expected result.',
+              checks: [
+                ['identifies promises', /promises|array of promises|promise/i],
+                ['uses Promise.all or equivalent', /Promise\.all|await.*all|for await/i],
+                ['provides correction', /async function activeUsers|const users|return users/i],
+                ['includes test or expected result', /test|assert|expected|console\.log/i]
+              ]
+            },
+            {
+              id: 'programming',
+              prompt: 'Write a Python function that returns the first non-repeating character in a string, or None if every character repeats. Preserve case sensitivity. Include runnable tests for "swiss", "aabb", and an empty string. Explain time complexity.',
+              checks: [
+                ['contains function', /def\s+\w+\s*\(/i],
+                ['handles no unique character', /None|return None/i],
+                ['includes tests for all cases', /swiss/i.test('swiss') ? /swiss[\s\S]*aabb[\s\S]*(empty|""|''|empty string)/i : /swiss[\s\S]*aabb/i],
+                ['explains complexity', /O\(n\)|time complexity|linear time/i]
+              ]
+            }
+          ];
+
+          const providers = [
+            {
+              id: 'FreeApp-AI',
+              call: async (prompt) => {
+                const r = await fetch(process.env.FREEAPP_API, {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ prompt, history: [], memorySummary: '', images: [] }),
+                  signal: AbortSignal.timeout(90000)
+                });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + String(d.error || d.detail || '').slice(0, 180));
+                return String(d.result || '');
+              }
+            },
+            {
+              id: 'LLM7-anonymous',
+              call: async (prompt) => {
+                const r = await fetch('https://api.llm7.io/v1/chat/completions', {
+                  method: 'POST', headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ model: 'default', messages: [{ role: 'user', content: prompt }], max_tokens: 1800, temperature: 0.1 }),
+                  signal: AbortSignal.timeout(45000)
+                });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + String(d?.error?.message || d?.message || '').slice(0, 180));
+                const t = d?.choices?.[0]?.message?.content;
+                const out = typeof t === 'string' ? t : Array.isArray(t) ? t.map(x => x.text || '').join('') : '';
+                if (!out.trim()) throw new Error('Empty response');
+                return out;
+              }
+            },
+            {
+              id: 'Kilo-anonymous',
+              call: async (prompt) => {
+                const r = await fetch('https://ai-gateway.kilo.ai/api/v1/chat/completions', {
+                  method: 'POST', headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ model: 'minimax/minimax-m2.1:free', messages: [{ role: 'user', content: prompt }], max_tokens: 1800, temperature: 0.1 }),
+                  signal: AbortSignal.timeout(45000)
+                });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + String(d?.error?.message || d?.message || '').slice(0, 180));
+                const t = d?.choices?.[0]?.message?.content;
+                const out = typeof t === 'string' ? t : Array.isArray(t) ? t.map(x => x.text || '').join('') : '';
+                if (!out.trim()) throw new Error('Empty response');
+                return out;
+              }
+            },
+            {
+              id: 'Pollinations-anonymous',
+              call: async (prompt) => {
+                const url = 'https://gen.pollinations.ai/text/' + encodeURIComponent(prompt.slice(0, 12000)) +
+                  '?model=' + encodeURIComponent('openai/gpt-oss-20b');
+                const r = await fetch(url, { signal: AbortSignal.timeout(45000) });
+                if (!r.ok) throw new Error('HTTP ' + r.status + ': anonymous endpoint may require authorization');
+                const out = (await r.text()).trim();
+                if (!out) throw new Error('Empty response');
+                return out;
+              }
+            }
+          ];
+
+          const results = [];
+          for (const task of tasks) {
+            for (const provider of providers) {
+              const started = Date.now();
+              try {
+                const answer = await provider.call(task.prompt);
+                const checks = task.checks.map(([name, pattern]) => ({ name, passed: pattern.test(answer) }));
+                results.push({
+                  task: task.id, provider: provider.id, status: 'success',
+                  latencyMs: Date.now() - started,
+                  score: Math.round(100 * checks.filter(c => c.passed).length / checks.length),
+                  checks, answerExcerpt: answer.slice(0, 2200)
+                });
+              } catch (e) {
+                results.push({
+                  task: task.id, provider: provider.id, status: 'unavailable',
+                  latencyMs: Date.now() - started, score: null,
+                  error: String(e?.message || e).slice(0, 240)
+                });
+              }
+            }
+          }
+
+          const summary = providers.map(p => {
+            const rows = results.filter(r => r.provider === p.id && r.status === 'success');
+            return {
+              provider: p.id,
+              availableTasks: rows.length + '/' + tasks.length,
+              meanHeuristicScore: rows.length ? Math.round(rows.reduce((s, r) => s + r.score, 0) / rows.length) : null,
+              meanLatencyMs: rows.length ? Math.round(rows.reduce((s, r) => s + r.latencyMs, 0) / rows.length) : null
+            };
+          });
+          const report = {
+            benchmark: 'FreeApp-AI head-to-head no-key smoke comparison',
+            timestamp: new Date().toISOString(),
+            note: 'No accounts, API keys, credit cards, or paid trial credits are used. Only anonymous endpoints are tested. Scores are simple heuristic checks, not expert grading or standardized leaderboard results. Unavailable providers are reported, not silently omitted.',
+            summary, results
+          };
+          fs.writeFileSync('freeapp-ai-head-to-head.json', JSON.stringify(report, null, 2));
+          console.log(JSON.stringify(report, null, 2));
+          if (!results.some(r => r.provider === 'FreeApp-AI' && r.status === 'success')) process.exitCode = 1;
+          NODE
+      - name: Upload comparison report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreeApp-AI-head-to-head-results
+          path: freeapp-ai-head-to-head.json
+          if-no-files-found: warn

@@ -1,0 +1,246 @@
+name: FreeApp AI Agent - Validate Proposed Repair
+
+on:
+  workflow_dispatch:
+    inputs:
+      review_run_id:
+        description: "Run ID of FreeApp AI Agent - AI Repair Review"
+        required: true
+        type: string
+      source_ref:
+        description: "Branch or commit to test the proposed patch against"
+        required: true
+        default: "feature/ai-agent-github-pipeline-retry"
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: freeapp-repair-validation-${{ inputs.source_ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-proposal:
+    name: Apply proposal only in disposable runner and run regression checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Validate inputs
+        env:
+          REVIEW_RUN_ID: ${{ inputs.review_run_id }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          set -euo pipefail
+          [[ "$REVIEW_RUN_ID" =~ ^[0-9]+$ ]] || { echo "Review run ID must be numeric"; exit 1; }
+          [[ "$SOURCE_REF" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "Source ref contains unsupported characters"; exit 1; }
+          [[ "$SOURCE_REF" != *".."* ]] || { echo "Source ref cannot contain .."; exit 1; }
+
+      - name: Checkout source revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+
+      - name: Download AI review artifact
+        id: review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          REVIEW_RUN_ID: ${{ inputs.review_run_id }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GH_REPO/actions/runs/$REVIEW_RUN_ID/artifacts" > artifacts.json
+          ARTIFACT_ID=$(jq -r '[.artifacts[] | select(.name | startswith("freeapp-ai-repair-review-")) | select(.expired == false)] | sort_by(.created_at) | last | .id // empty' artifacts.json)
+          if [ -z "$ARTIFACT_ID" ]; then
+            echo "No unexpired FreeApp AI repair-review artifact found for run $REVIEW_RUN_ID." >&2
+            exit 1
+          fi
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GH_REPO/actions/artifacts/$ARTIFACT_ID/zip" -o review-artifact.zip
+          mkdir review-artifact
+          unzip -q review-artifact.zip -d review-artifact
+          REVIEW_FILE=$(find review-artifact -type f -name 'model-review.md' -print -quit)
+          if [ -z "$REVIEW_FILE" ]; then
+            echo "Review artifact did not contain model-review.md." >&2
+            exit 1
+          fi
+          cp "$REVIEW_FILE" model-review.md
+          echo "Review report downloaded. It will be treated as untrusted input."
+
+      - name: Extract a proposed unified diff
+        id: patch
+        run: |
+          python - <<'PY'
+          import re, sys
+          text = open("model-review.md", encoding="utf-8", errors="replace").read()
+          # Only accept a clearly fenced diff/patch block or a unified diff with file headers.
+          blocks = re.findall(r"```(?:diff|patch)\s*\n(.*?)\n```", text, flags=re.S | re.I)
+          candidates = []
+          for block in blocks:
+              if ("--- " in block and "+++ " in block) or "diff --git " in block:
+                  candidates.append(block.strip())
+          if not candidates:
+              for match in re.finditer(r"(?m)^(?:diff --git .+|--- a/.+\n\+\+\+ b/.+)", text):
+                  candidate = text[match.start():].strip()
+                  if "\n+++ " in candidate and ("\n@@ " in candidate or "\n@@@" in candidate):
+                      candidates.append(candidate)
+                      break
+          if not candidates:
+              open("proposed.patch", "w").write("")
+              print("No usable unified diff found in the AI report.")
+              sys.exit(0)
+          patch = candidates[0]
+          # Strip surrounding prose if a model included it inside the fence.
+          lines = patch.splitlines()
+          start = next((i for i, line in enumerate(lines) if line.startswith("diff --git ") or line.startswith("--- ")), None)
+          if start is not None:
+              lines = lines[start:]
+          open("proposed.patch", "w").write("\n".join(lines) + "\n")
+          print("Extracted a proposed diff for isolated validation.")
+          PY
+          if [ ! -s proposed.patch ]; then
+            echo "has_patch=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "# Proposed repair validation"
+              echo
+              echo "No machine-applicable unified diff was found in the AI report."
+              echo "No files were changed. Review the report and request a concrete patch if appropriate."
+            } > validation-report.md
+          else
+            echo "has_patch=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check and apply patch in disposable workspace
+        if: steps.patch.outputs.has_patch == 'true'
+        id: apply
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          git apply --check proposed.patch
+          git apply --stat proposed.patch > patch-stat.txt
+          git apply proposed.patch
+          echo "Patch applied only to this temporary GitHub-hosted runner workspace."
+          git diff --check
+
+      - name: Set up JDK 17
+        if: steps.patch.outputs.has_patch == 'true' && steps.apply.outcome == 'success'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Node.js
+        if: steps.patch.outputs.has_patch == 'true' && steps.apply.outcome == 'success'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Check JavaScript syntax after proposed patch
+        if: steps.patch.outputs.has_patch == 'true' && steps.apply.outcome == 'success'
+        id: jscheck
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          node --check worker.js 2>&1 | tee js-check.log
+          node --check app.js 2>&1 | tee -a js-check.log
+
+      - name: Prepare Android and voice assets
+        if: steps.patch.outputs.has_patch == 'true' && steps.apply.outcome == 'success'
+        id: assets
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          rm -rf app/src/main/assets
+          mkdir -p app/src/main/assets
+          cp -R public/. app/src/main/assets/
+          VOICE_DIR="app/src/main/assets/voice"
+          MODEL_DIR="$VOICE_DIR/onnx/english_2026-04"
+          ORT_DIR="$VOICE_DIR/ort"
+          mkdir -p "$MODEL_DIR" "$ORT_DIR"
+          curl -fL --retry 3 -o "$VOICE_DIR/sentencepiece.js" "https://raw.githubusercontent.com/hemanth/pocket-voice/main/sentencepiece.js"
+          curl -fL --retry 3 -o "$ORT_DIR/ort.min.js" "https://unpkg.com/onnxruntime-web@1.18.0/dist/ort.min.js"
+          curl -fL --retry 3 -o "$ORT_DIR/ort-wasm.wasm" "https://unpkg.com/onnxruntime-web@1.18.0/dist/ort-wasm.wasm"
+          BASE="https://huggingface.co/spaces/KevinAHM/pocket-tts-web/resolve/main/onnx/english_2026-04"
+          for f in bundle.json tokenizer.model bos_before_voice.npy mimi_encoder_int8.onnx text_conditioner_int8.onnx flow_lm_main_int8.onnx flow_lm_flow_int8.onnx mimi_decoder_int8.onnx; do
+            curl -fL --retry 3 -o "$MODEL_DIR/$f" "$BASE/$f"
+          done
+
+      - name: Build APK and run unit tests on proposed patch
+        if: steps.patch.outputs.has_patch == 'true' && steps.apply.outcome == 'success'
+        id: build
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          gradle assembleDebug testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee gradle-repair-validation.log
+
+      - name: Produce validation report
+        if: always()
+        env:
+          HAS_PATCH: ${{ steps.patch.outputs.has_patch }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+          JS_OUTCOME: ${{ steps.jscheck.outcome }}
+          ASSET_OUTCOME: ${{ steps.assets.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          REVIEW_RUN_ID: ${{ inputs.review_run_id }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          {
+            echo "# FreeApp AI proposed-repair validation"
+            echo
+            echo "- AI review run: $REVIEW_RUN_ID"
+            echo "- Tested source ref: $SOURCE_REF"
+            echo "- Machine-applicable patch found: ${HAS_PATCH:-not reached}"
+            echo "- Patch check/apply: ${APPLY_OUTCOME:-not run}"
+            echo "- JavaScript syntax: ${JS_OUTCOME:-not run}"
+            echo "- Asset preparation: ${ASSET_OUTCOME:-not run}"
+            echo "- Android build and unit tests: ${BUILD_OUTCOME:-not run}"
+            echo
+            echo "## Safety boundary"
+            echo "The proposed patch was tested only in a disposable runner workspace. This workflow has read-only repository permissions and does not commit, push, or merge code."
+            echo "A successful build is not proof of physical-device runtime correctness. Review the diff and regression behaviour before any manual merge."
+          } >> "$GITHUB_STEP_SUMMARY"
+          cp model-review.md model-review-copy.md 2>/dev/null || true
+          {
+            echo "# Validation result"
+            echo
+            echo "- Review run: $REVIEW_RUN_ID"
+            echo "- Source ref: $SOURCE_REF"
+            echo "- Patch found: ${HAS_PATCH:-not reached}"
+            echo "- Patch application: ${APPLY_OUTCOME:-not run}"
+            echo "- JavaScript check: ${JS_OUTCOME:-not run}"
+            echo "- Assets: ${ASSET_OUTCOME:-not run}"
+            echo "- Build/tests: ${BUILD_OUTCOME:-not run}"
+            echo
+            echo "This workflow does not write to the repository."
+          } > validation-report.md
+
+      - name: Upload candidate APK, patch, logs, and reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: freeapp-ai-proposed-repair-validation-${{ github.run_number }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            proposed.patch
+            patch-stat.txt
+            model-review.md
+            validation-report.md
+            js-check.log
+            gradle-repair-validation.log
+            app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Fail if a patch could not be applied or checks failed
+        if: always() && steps.patch.outputs.has_patch == 'true'
+        env:
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+          JS_OUTCOME: ${{ steps.jscheck.outcome }}
+          ASSET_OUTCOME: ${{ steps.assets.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+        run: |
+          test "$APPLY_OUTCOME" = "success"
+          test "$JS_OUTCOME" = "success"
+          test "$ASSET_OUTCOME" = "success"
+          test "$BUILD_OUTCOME" = "success"

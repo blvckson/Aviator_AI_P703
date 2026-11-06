@@ -1,0 +1,196 @@
+name: Expanded AI Head-to-Head (Research + App Building)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/expanded-ai-comparison.yml'
+      - 'worker.js'
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Run identical tasks against FreeApp-AI and anonymous LLM7
+        env:
+          FREEAPP_URL: https://freeapp-ai.lovesongmelodies.workers.dev/api/generate
+          LLM7_URL: https://api.llm7.io/v1/chat/completions
+          QWEN_URL: https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_2 }}
+        run: |
+          python - <<'PY'
+          import json, os, re, time, urllib.request, urllib.error, statistics
+          from datetime import datetime, timezone
+
+          tasks = [
+            {
+              "id":"reasoning",
+              "prompt":"Solve carefully and show the key calculation: A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost? Give the answer in cents and explain briefly.",
+              "checks":[r"5 cents|\$0\.05|0\.05 dollars", r"1\.10|110 cents", r"1\.00|100 cents"]
+            },
+            {
+              "id":"debugging",
+              "prompt":"Debug this JavaScript: async function getNames(ids){ const results = ids.map(async id => await fetchName(id)); return results.filter(x => x.active); } Explain the bug and provide corrected code that waits for every fetch and filters active results.",
+              "checks":[r"Promise\.all", r"await", r"filter", r"active"]
+            },
+            {
+              "id":"programming",
+              "prompt":"Write a correct Python function first_non_repeating(s) that returns the first character that occurs exactly once, or None if none exists. Include code and at least 3 tests covering repeated characters, no unique character, and an empty string.",
+              "checks":[r"def first_non_repeating", r"None", r"assert|test", r"count|Counter|frequency"]
+            },
+            {
+              "id":"research",
+              "prompt":"Research the current official Android documentation for the minimum Android version and setup requirements for using Android's MediaProjection API to capture the screen. Give a concise answer, distinguish documented facts from uncertainty, and include at least 2 direct official Android developer source URLs with page titles. Do not invent citations; if live browsing is unavailable, say so clearly.",
+              "checks":[r"developer\.android\.com", r"https?://", r"MediaProjection", r"Android 14|API level 34|foreground service|user consent|consent"]
+            },
+            {
+              "id":"app_building",
+              "prompt":"Build a tiny complete single-file web app called Task Pocket: add tasks, mark complete, delete tasks, filter All/Active/Completed, and persist tasks after refresh using localStorage. Return only a complete runnable HTML file with CSS and JavaScript. No external libraries. Include accessible labels and handle empty state.",
+              "checks":[r"<!doctype html|<!DOCTYPE html", r"localStorage", r"addEventListener", r"delete|remove", r"completed|complete", r"aria-|label", r"filter|Active"]
+            }
+          ]
+
+          def request_json(url, payload, headers=None, timeout=35):
+              data=json.dumps(payload).encode()
+              req=urllib.request.Request(url, data=data, headers={"Content-Type":"application/json","Accept":"application/json","User-Agent":"Mozilla/5.0 (compatible; FreeApp-AI-Benchmark/1.0)", **(headers or {})}, method="POST")
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      return json.loads(resp.read().decode())
+              except urllib.error.HTTPError as e:
+                  # Preserve provider error codes so quota exhaustion is not confused with a model-quality failure.
+                  raw=e.read().decode("utf-8", errors="replace")
+                  try:
+                      body=json.loads(raw)
+                  except Exception:
+                      body={"message":raw[:500]}
+                  err=body.get("error",body) if isinstance(body,dict) else {"message":str(body)}
+                  if not isinstance(err,dict): err={"message":str(err)}
+                  code=err.get("code") or err.get("status") or "unknown"
+                  message=err.get("message") or err.get("detail") or raw[:500] or str(e)
+                  retry_after=e.headers.get("Retry-After")
+                  raise RuntimeError(f"HTTP {e.code}; provider_code={code}; message={message}; retry_after={retry_after}; url={url}") from None
+
+          def freeapp_call(prompt):
+              # Match the known-good live benchmark request contract first.
+              body={"prompt":prompt,"history":[],"memorySummary":"","images":[]}
+              try:
+                  return request_json(os.environ["FREEAPP_URL"],body,timeout=60)
+              except Exception as first_error:
+                  # Diagnostic fallbacks only; preserve the actual last HTTP error.
+                  last=first_error
+                  for fallback in ({"prompt":prompt},{"message":prompt},{"messages":[{"role":"user","content":prompt}]}):
+                      try:
+                          return request_json(os.environ["FREEAPP_URL"],fallback,timeout=60)
+                      except Exception as e:
+                          last=e
+                  raise last
+
+          def llm7_call(prompt):
+              return request_json(os.environ["LLM7_URL"],{"model":"default","messages":[{"role":"user","content":prompt}],"temperature":0.2,"max_tokens":1800})
+
+          def qwen_anonymous_call(prompt):
+              # Anonymous public OVH endpoint; model is Qwen-hosted by OVH, not Alibaba's official API.
+              return request_json(os.environ["QWEN_URL"],{"model":"Qwen3.8-27B","messages":[{"role":"user","content":prompt}],"temperature":0.2,"max_tokens":1800})
+
+          def openai_latest_api_call(prompt):
+              key=os.environ.get("OPENAI_API_KEY","").strip()
+              if not key: raise RuntimeError("Official OpenAI API not tested: OPENAI_API_KEY secret is not configured; ChatGPT web access is not an anonymous API.")
+              return request_json("https://api.openai.com/v1/chat/completions",{"model":"gpt-6-astra","messages":[{"role":"user","content":prompt}],"max_completion_tokens":1800},{"Authorization":"Bearer "+key},timeout=60)
+
+          def gemini_latest_api_call(prompt):
+              key=os.environ.get("GEMINI_API_KEY","").strip()
+              if not key: raise RuntimeError("Official Gemini API not tested: GEMINI_API_KEY secret is not configured; public Gemini chat is not an anonymous API.")
+              url="https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key="+key
+              payload={"contents":[{"parts":[{"text":prompt}]}],"generationConfig":{"temperature":0.2,"maxOutputTokens":1800}}
+              return request_json(url,payload,timeout=60)
+
+          def extract_text(obj):
+              if isinstance(obj,str): return obj
+              if isinstance(obj,dict):
+                  choices=obj.get("choices")
+                  if isinstance(choices,list) and choices:
+                      c=choices[0]
+                      if isinstance(c,dict):
+                          msg=c.get("message",{})
+                          if isinstance(msg,dict) and isinstance(msg.get("content"),str): return msg["content"]
+                          if isinstance(c.get("text"),str): return c["text"]
+                  candidates=obj.get("candidates")
+                  if isinstance(candidates,list) and candidates:
+                      content=candidates[0].get("content",{})
+                      parts=content.get("parts",[]) if isinstance(content,dict) else []
+                      texts=[p.get("text","") for p in parts if isinstance(p,dict) and isinstance(p.get("text"),str)]
+                      if texts:return "\\n".join(texts)
+                  for k in ("response","text","content","answer","output","result","generated_text"):
+                      v=obj.get(k)
+                      if isinstance(v,str): return v
+                      if isinstance(v,dict):
+                          s=extract_text(v)
+                          if s:return s
+                  return json.dumps(obj,ensure_ascii=False)
+              return str(obj)
+
+          def evaluate(task, text):
+              flags=[bool(re.search(p,text,re.I|re.S)) for p in task["checks"]]
+              score=round(100*sum(flags)/len(flags))
+              details={"checks_passed":sum(flags),"checks_total":len(flags),"check_results":flags}
+              if task["id"]=="research":
+                  urls=re.findall(r"https?://[^\s\]\)<>\"']+",text)
+                  official=[u for u in urls if "developer.android.com" in u]
+                  details.update({"url_count":len(urls),"official_android_urls":len(official),"source_grounding_is_heuristic":True})
+                  # Penalize claims presented as sourced when no official URL is included.
+                  if len(official)<2: score=min(score,60)
+              if task["id"]=="app_building":
+                  details["has_html_document"]=bool(re.search(r"<!doctype html|<!DOCTYPE html",text,re.I))
+                  details["has_localstorage"]=bool(re.search(r"localStorage",text))
+                  details["external_dependencies"]=bool(re.search(r"<script[^>]+src=|<link[^>]+href=",text,re.I))
+                  if details["external_dependencies"]: score=max(0,score-20)
+              return score,details
+
+          providers={
+            "FreeApp-AI":lambda p:freeapp_call(p),
+            "LLM7 anonymous":lambda p:llm7_call(p),
+            "Qwen via anonymous OVH endpoint":lambda p:qwen_anonymous_call(p),
+            "OpenAI GPT-6 Astra API (not ChatGPT Free app)":lambda p:openai_latest_api_call(p),
+            "Google Gemini 3.8 Flash API (free-tier eligible)":lambda p:gemini_latest_api_call(p)
+          }
+          results={"created_at":datetime.now(timezone.utc).isoformat(),"method":"same prompts; automated checklist only; not a standardized commercial benchmark","access_notes":{"Gemini_official":"Uses the official Gemini 3.8 Flash API with repository secret GEMINI_API_KEY_2; free-tier access and rate limits depend on Google account/project.; no key is created or purchased by this workflow.","OpenAI_official_and_ChatGPT":"Uses official GPT-6 Astra API only if OPENAI_API_KEY is configured as a GitHub Actions secret. GPT-6 Astra is OpenAI’s current flagship API model; ChatGPT web/app is not a public anonymous API.","No_credentials":"If either secret is absent, that provider will be marked unavailable and no login, card, or payment will be attempted.","Qwen":"Tested through an anonymous OVH-hosted Qwen model endpoint, not Alibaba/Qwen official API."},"tasks":[],"providers":{}}
+          totals={name:[] for name in providers}
+          latencies={name:[] for name in providers}
+          for task in tasks:
+              row={"task":task["id"],"prompt":task["prompt"],"providers":{}}
+              for name,call in providers.items():
+                  started=time.time()
+                  try:
+                      raw=call(task["prompt"])
+                      answer=extract_text(raw)
+                      elapsed=round(time.time()-started,3)
+                      score,details=evaluate(task,answer)
+                      row["providers"][name]={"status":"ok","score":score,"latency_seconds":elapsed,"evaluation":details,"answer":answer[:12000]}
+                      totals[name].append(score);latencies[name].append(elapsed)
+                  except Exception as e:
+                      row["providers"][name]={"status":"unavailable","error":str(e)[:700],"latency_seconds":round(time.time()-started,3)}
+              results["tasks"].append(row)
+          for name in providers:
+              scores=totals[name]
+              completed=len(scores)
+              mean_score=round(statistics.mean(scores),1) if scores else None
+              results["providers"][name]={"tasks_completed":completed,"tasks_total":len(tasks),"coverage_percent":round(100*completed/len(tasks),1),"mean_heuristic_score_on_completed_tasks":mean_score,"coverage_adjusted_score":round(mean_score*completed/len(tasks),1) if mean_score is not None else 0,"mean_latency_seconds":round(statistics.mean(latencies[name]),3) if latencies[name] else None,"category_scores":{r["task"]:r["providers"].get(name,{}).get("score") for r in results["tasks"]},"interpretation":"Checklist score is heuristic, not correctness; unavailable tasks count as missing coverage, not wrong answers."}
+          os.makedirs("comparison-results",exist_ok=True)
+          with open("comparison-results/expanded-comparison.json","w") as f: json.dump(results,f,indent=2,ensure_ascii=False)
+          print(json.dumps({"comparison_warning":"Do not rank providers with incomplete coverage by mean score alone. HTTP 429 is an access/quota/rate-limit failure, not a model-quality score.","providers":results["providers"],"tasks":[{"task":r["task"],"providers":{n:{"status":v.get("status"),"error":v.get("error"),"score":v.get("score")} for n,v in r["providers"].items()}} for r in results["tasks"]]},indent=2))
+          PY
+      - name: Upload full comparison results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreeApp-AI-expanded-head-to-head
+          path: comparison-results/expanded-comparison.json
+          if-no-files-found: warn
+          retention-days: 30
+
+# Run comparisons on each workflow update; task scores are heuristic, not definitive.

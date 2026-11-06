@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="phone_control_accessibility_description">FreeApp AI Phone Control: when you explicitly enable it, the assistant can read visible app controls and carry out the screen actions you request. You can disable it at any time in Accessibility settings.</string>
+</resources>
