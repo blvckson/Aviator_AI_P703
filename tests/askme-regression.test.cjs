@@ -30,6 +30,8 @@ test("native Android TTS bridge and browser fallback are present", () => {
   assert.match(activity, /addJavascriptInterface\(new NativeNarrator\(\), "AskMeNativeTTS"\)/);
   assert.match(activity, /@JavascriptInterface/);
   assert.match(activity, /textToSpeech\.shutdown\(\)/);
+  assert.match(activity, /shouldOverrideUrlLoading/);
+  assert.match(activity, /appassets\\.androidplatform\\.net/);
   assert.match(app, /window\.AskMeNativeTTS\.speakChunk/);
   assert.match(app, /window\.speechSynthesis\.speak/);
 });
