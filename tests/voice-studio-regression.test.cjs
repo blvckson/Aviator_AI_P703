@@ -9,8 +9,8 @@ const workflow = fs.readFileSync(".github/workflows/build-apk.yml", "utf8");
 
 test("voice studio controller and inference worker expose their ES module entry points", () => {
   assert.match(voiceApp, /class PocketVoice/);
-  assert.match(voiceApp, /^import\\s/m);
-  assert.match(worker, /self\\.onmessage/);
+  assert.ok(voiceApp.includes("import { PCMPlayerWorklet"));
+  assert.ok(worker.includes("self.onmessage"));
 });
 
 test("voice studio exposes microphone recording and audio file upload", () => {
