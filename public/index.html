@@ -14,7 +14,10 @@
           <h1>Ask.Me AI</h1>
           <p>Deep reasoning, live research, screenshots, images and videos.</p>
         </div>
-        <button id="narrator-settings-button" class="icon-button" type="button" aria-label="Narrator settings">🎙 Voice Clone</button>
+        <div class="header-actions">
+          <button id="narrator-button" class="icon-button" type="button" disabled>▶ Read answer</button>
+          <button id="narrator-settings-button" class="icon-button" type="button" aria-label="Open voice cloning studio">🎙 Voice Clone</button>
+        </div>
       </div>
       </header>
     <section class="card">
@@ -29,6 +32,15 @@
       </div>
       <div id="preview"></div>
       <button id="build-button" type="button">Ask Ask.Me AI</button>
+      <section class="narrator-controls" aria-label="Built-in narrator controls">
+        <div class="narrator-heading"><strong>Built-in narrator</strong><span id="narrator-speed-value">0.90×</span></div>
+        <label for="narrator-speed">Reading speed</label>
+        <input id="narrator-speed" type="range" min="0.70" max="1.50" step="0.05" value="0.90">
+        <div class="narrator-actions">
+          <label class="auto-read"><input id="narrator-auto-read" type="checkbox"> Automatically read new answers</label>
+          <button id="narrator-stop" class="secondary-button" type="button" disabled>Stop reading</button>
+        </div>
+      </section>
       <div id="status" class="status" aria-live="polite"></div>
       <div id="result" aria-live="polite"></div>
       <div id="media"></div>
