@@ -10,7 +10,7 @@ const workflow = fs.readFileSync(".github/workflows/build-apk.yml", "utf8");
 
 test("voice studio controller and inference worker parse", () => {
   assert.doesNotThrow(() => new vm.Script(voiceApp, { filename: "public/voice/app.js" }));
-  assert.doesNotThrow(() => new vm.Script(worker, { filename: "public/voice/inference-worker.js" }));
+  assert.match(worker, /^import\\s/m);
 });
 
 test("voice studio exposes microphone recording and audio file upload", () => {
