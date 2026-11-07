@@ -165,7 +165,7 @@ function buildQualityPrompt(userPrompt) {
   if (/build|create|develop|implement|app|software|program|code|function|script/i.test(userPrompt)) {
     rules.push("Engineering quality: deliver complete, coherent, runnable code rather than a sketch when code is requested; validate inputs; handle failures; include meaningful tests and build/run steps. For user interfaces, use semantic HTML and accessible labels for every control, and avoid external dependencies unless requested. Never claim that code was compiled or executed unless it actually was.");
   }
-  if (/topological|directed graph|\\bDAG\\b|edge\\[0\\]|edge\\[1\\]/i.test(userPrompt)) {
+  if (/topological|directed graph|\bDAG\b|edge\[0\]|edge\[1\]/i.test(userPrompt)) {
     rules.push("Graph/code self-audit: before returning the implementation, validate BOTH endpoints of every edge (source and target) against the declared node set before indexing or mutating graph state. Include tests for an unknown source endpoint and an unknown target endpoint. Do not omit either check.");
   }
   if (/html|web app|form|input|button|accessible|task manager/i.test(userPrompt)) {
