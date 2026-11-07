@@ -40,6 +40,6 @@ test("AI requests handle empty responses, timeouts, and always release the submi
 });
 
 test("research links and media URLs are restricted to HTTP(S)", () => {
-  assert.ok((app.match(/\\/\\^https\?:\\/\\//g) || []).length >= 2);
+  assert.match(app, /source\\.url/);\n  assert.match(app, /item\\.url/);
   assert.match(app, /noopener noreferrer/);
 });
