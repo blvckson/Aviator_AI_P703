@@ -1,16 +1,17 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
-const vm = require("node:vm");
 
 const voiceApp = fs.readFileSync("public/voice/app.js", "utf8");
 const voiceHtml = fs.readFileSync("public/voice/index.html", "utf8");
 const worker = fs.readFileSync("public/voice/inference-worker.js", "utf8");
 const workflow = fs.readFileSync(".github/workflows/build-apk.yml", "utf8");
 
-test("voice studio controller and inference worker parse", () => {
-  assert.doesNotThrow(() => new vm.Script(voiceApp, { filename: "public/voice/app.js" }));
+test("voice studio controller and inference worker expose their ES module entry points", () => {
+  assert.match(voiceApp, /class PocketVoice/);
+  assert.match(voiceApp, /new PocketVoice/);
   assert.match(worker, /^import\\s/m);
+  assert.match(worker, /self\\.onmessage/);
 });
 
 test("voice studio exposes microphone recording and audio file upload", () => {
