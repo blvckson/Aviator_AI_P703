@@ -58,6 +58,14 @@ class PocketVoice {
     // Metrics
     this.rtfMovingAvg = 0;
     this.playbackSpeed = 0.90;
+    try {
+      const savedPlaybackSpeed = Number(localStorage.getItem("askme_voice_studio_playback_speed"));
+      if (Number.isFinite(savedPlaybackSpeed) && savedPlaybackSpeed >= 0.70 && savedPlaybackSpeed <= 1.50) {
+        this.playbackSpeed = savedPlaybackSpeed;
+      }
+    } catch (_) {
+      // Private browsing or restricted storage must not prevent voice studio startup.
+    }
 
     // Built-in voices list
     this.builtinVoices = [];
@@ -204,9 +212,19 @@ class PocketVoice {
       });
     });
 
+    this.el.narratorSpeed.value = String(this.playbackSpeed);
+    this.el.narratorSpeedValue.textContent = `${this.playbackSpeed.toFixed(2)}×`;
     this.el.narratorSpeed.addEventListener("input", () => {
-      this.playbackSpeed = Number(this.el.narratorSpeed.value);
+      const requestedRate = Number(this.el.narratorSpeed.value);
+      if (!Number.isFinite(requestedRate)) return;
+      this.playbackSpeed = Math.min(1.50, Math.max(0.70, requestedRate));
+      this.el.narratorSpeed.value = String(this.playbackSpeed);
       this.el.narratorSpeedValue.textContent = `${this.playbackSpeed.toFixed(2)}×`;
+      try {
+        localStorage.setItem("askme_voice_studio_playback_speed", String(this.playbackSpeed));
+      } catch (_) {
+        // Playback speed still applies for this session when storage is unavailable.
+      }
     });
 
     this.el.btnGenerate.addEventListener("click", () => this.generate());
