@@ -61,7 +61,7 @@ test("task-specific quality instructions cover research, engineering, debugging 
   assert.match(app, /Engineering quality:/);
   assert.match(app, /Debugging quality:/);
   assert.match(app, /Repository-operation honesty:/);
-  assert.match(app, /prompt: buildQualityPrompt\(prompt\)/);
+  assert.match(app, /prompt: buildQualityPrompt\(effectivePrompt\)/);
 });
 
 test("research intent is not reported as verified without returned source metadata", () => {
