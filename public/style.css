@@ -36,3 +36,11 @@ button:disabled { opacity: .6; cursor: wait; }
 .voice-upload { margin-top:12px; padding:14px; border:1px solid #ddd; border-radius:10px; }
 .small { font-size:13px; line-height:1.45; color:#555; }
 .secondary-button { background:#666; }
+
+
+/* ChatGPT-style attachment control: file input stays hidden behind the plus button. */
+.chat-attachments { display:flex; align-items:center; gap:10px; margin-top:8px; min-height:44px; }
+.attach-button { display:flex; align-items:center; justify-content:center; flex:0 0 44px; width:44px; height:44px; margin:0; padding:0; border:1px solid #c8cdd3; border-radius:50%; background:#f1f3f5; color:#202124; font-size:30px; font-weight:400; line-height:1; cursor:pointer; }
+.attach-button:active { transform:scale(.96); }
+.file-status { font-size:13px; color:#60656b; }
+#preview { display:flex; flex-wrap:wrap; gap:6px; }
