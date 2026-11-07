@@ -3,6 +3,8 @@
 const byId = (id) => document.getElementById(id);
 const promptBox = byId("prompt");
 const imageInput = byId("image-input");
+const fileInput = byId("file-input");
+const docFileStatus = byId("doc-file-status");
 const fileStatus = byId("file-status");
 const preview = byId("preview");
 const resultBox = byId("result");
@@ -22,10 +24,14 @@ const voiceCloneClose = byId("narrator-close");
 
 const API_BASE = "https://freeapp-ai.lovesongmelodies.workers.dev";
 const MAX_IMAGES = 4;
+const MAX_DOC_FILES = 5;
+const MAX_DOC_BYTES = 100000;
+const MAX_DOC_CHARS = 12000;
 const MAX_PROMPT_CHARS = 24000;
 const REQUEST_TIMEOUT_MS = 120000;
 const DEFAULT_NARRATOR_RATE = 0.90;
 let selectedImages = [];
+let selectedDocs = [];
 let lastAnswer = "";
 let speechQueue = [];
 let speaking = false;
@@ -155,6 +161,18 @@ if (imageInput) imageInput.addEventListener("change", () => {
     preview.appendChild(img);
   }
 });
+if (fileInput) fileInput.addEventListener("change", () => {
+  selectedDocs = Array.from(fileInput.files || [])
+    .filter(file => /\\.(txt|md|csv|json|py|js|kt|java|html|css|xml|log)$/i.test(file.name))
+    .filter(file => file.size <= MAX_DOC_BYTES)
+    .slice(0, MAX_DOC_FILES);
+  if (docFileStatus) {
+    const rejected = Math.max(0, (fileInput.files || []).length - selectedDocs.length);
+    docFileStatus.textContent = selectedDocs.length
+      ? selectedDocs.length + " document(s) selected" + (rejected ? "; " + rejected + " skipped (type/size/limit)" : "")
+      : "No supported documents selected";
+  }
+});
 if (buildButton) buildButton.addEventListener("click", askAI);
 
 function buildQualityPrompt(userPrompt) {
@@ -187,7 +205,7 @@ function buildQualityPrompt(userPrompt) {
 
 async function askAI() {
   const prompt = String(promptBox && promptBox.value || "").trim();
-  if (!prompt && !selectedImages.length) {
+  if (!prompt && !selectedImages.length && !selectedDocs.length) {
     statusBox.textContent = "Enter a question or attach an image first.";
     return;
   }
@@ -209,10 +227,19 @@ async function askAI() {
   try {
     const images = [];
     for (const file of selectedImages) images.push(await toDataUrl(file));
+    const documentParts = [];
+    for (const file of selectedDocs) {
+      const content = await toText(file);
+      documentParts.push("--- ATTACHED FILE: " + file.name + " ---\\n" + content);
+    }
+    const effectivePrompt = [prompt, ...documentParts].filter(Boolean).join("\\n\\n");
+    if (effectivePrompt.length > MAX_PROMPT_CHARS) {
+      throw new Error("The question and attached text exceed " + MAX_PROMPT_CHARS + " characters. Attach fewer or shorter files.");
+    }
     const response = await fetch(API_BASE + "/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: buildQualityPrompt(prompt), images, history: [], memorySummary: "" }),
+      body: JSON.stringify({ prompt: buildQualityPrompt(effectivePrompt), images, history: [], memorySummary: "" }),
       ...(controller ? { signal: controller.signal } : {})
     });
     const data = await response.json().catch(() => ({}));
@@ -283,6 +310,14 @@ function renderMedia(media) {
     }
     mediaBox.appendChild(wrap);
   }
+}
+function toText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || "").slice(0, MAX_DOC_CHARS));
+    reader.onerror = () => reject(new Error("Could not read attached file: " + file.name));
+    reader.readAsText(file);
+  });
 }
 function toDataUrl(file) {
   return new Promise((resolve, reject) => {
