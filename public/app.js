@@ -232,7 +232,7 @@ async function askAI() {
       const content = await toText(file);
       documentParts.push("--- ATTACHED FILE: " + file.name + " ---\n" + content);
     }
-    const effectivePrompt = [prompt, ...documentParts].filter(Boolean).join("\n\n");
+    const effectivePrompt = [prompt || (images.length ? "Please analyze the attached image(s) and describe the relevant details." : ""), ...documentParts].filter(Boolean).join("\n\n");
     if (effectivePrompt.length > MAX_PROMPT_CHARS) {
       throw new Error("The question and attached text exceed " + MAX_PROMPT_CHARS + " characters. Attach fewer or shorter files.");
     }
