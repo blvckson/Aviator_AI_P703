@@ -51,3 +51,20 @@ button:disabled { opacity: .6; cursor: wait; }
   .header-actions { width:100%; justify-content:stretch; }
   .header-actions button { flex:1; }
 }
+
+
+.github-agent-card { margin-top:18px; }
+.github-agent-card h2 { margin:0 0 8px; }
+.github-agent-card input, .github-agent-card select, .github-agent-card textarea {
+  width:100%; padding:12px; margin:6px 0 14px; border:1px solid #bbb; border-radius:8px; font:inherit;
+}
+.github-agent-card .small { font-size:13px; line-height:1.5; color:#555; }
+.github-agent-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; align-items:end; }
+.github-agent-actions label { grid-column:1/-1; margin:0; }
+.github-agent-actions select { grid-column:1/-1; }
+.github-agent-actions button { margin:0; padding:11px 8px; font-size:14px; }
+.github-agent-result { white-space:pre-wrap; overflow-wrap:anywhere; max-height:420px; overflow:auto; background:#f4f6f8; border-radius:8px; padding:12px; font-size:12px; }
+@media (max-width:520px) {
+  .github-agent-actions { grid-template-columns:1fr; }
+  .github-agent-actions label, .github-agent-actions select { grid-column:1; }
+}
