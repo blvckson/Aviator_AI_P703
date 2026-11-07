@@ -17,7 +17,7 @@ test("voice studio exposes microphone recording and audio file upload", () => {
   assert.match(voiceHtml, /id="btn-record"/);
   assert.match(voiceHtml, /id="btn-upload"/);
   assert.match(voiceHtml, /id="file-upload"/);
-  assert.match(voiceHtml, /audio\\//);
+  assert.ok(voiceHtml.includes("accept=\"audio/*\""));
   assert.match(voiceApp, /new MediaRecorder/);
   assert.match(voiceApp, /getUserMedia/);
   assert.match(voiceApp, /handleFileUpload/);
