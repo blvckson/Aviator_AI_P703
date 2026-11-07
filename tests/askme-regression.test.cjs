@@ -68,3 +68,10 @@ test("research intent is not reported as verified without returned source metada
   assert.match(app, /const hasVerifiedSources = data\.researched === true/);
   assert.match(app, /live source verification was not confirmed/);
 });
+
+test("engineering prompt adds explicit graph endpoint and UI accessibility self-audits", () => {
+  assert.match(app, /Graph\/code self-audit:/);
+  assert.match(app, /validate BOTH endpoints/);
+  assert.match(app, /Accessibility self-audit:/);
+  assert.match(app, /aria-labelledby/);
+});
