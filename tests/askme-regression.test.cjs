@@ -75,3 +75,19 @@ test("engineering prompt adds explicit graph endpoint and UI accessibility self-
   assert.match(app, /Accessibility self-audit:/);
   assert.match(app, /aria-labelledby/);
 });
+
+test("document and source-code upload picker is wired into prompt context", () => {
+  assert.match(html, /id="file-input"[^>]*multiple/);
+  assert.match(html, /\.txt,\.md,\.csv,\.json/);
+  assert.match(app, /selectedDocs/);
+  assert.match(app, /function toText\(file\)/);
+  assert.match(app, /ATTACHED FILE:/);
+  assert.match(app, /MAX_DOC_BYTES/);
+});
+
+test("Android file chooser respects accepted MIME types and multiple selection", () => {
+  assert.match(activity, /fileChooserParams\.getAcceptTypes\(\)/);
+  assert.match(activity, /EXTRA_MIME_TYPES/);
+  assert.match(activity, /MODE_OPEN_MULTIPLE/);
+  assert.match(activity, /getClipData\(\)/);
+});
