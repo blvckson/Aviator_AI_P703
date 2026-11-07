@@ -3,9 +3,24 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 
 const voiceApp = fs.readFileSync("public/voice/app.js", "utf8");
+const chatApp = fs.readFileSync("public/app.js", "utf8");
+const chatHtml = fs.readFileSync("public/index.html", "utf8");
 const voiceHtml = fs.readFileSync("public/voice/index.html", "utf8");
 const worker = fs.readFileSync("public/voice/inference-worker.js", "utf8");
 const workflow = fs.readFileSync(".github/workflows/build-apk.yml", "utf8");
+
+test("built-in narrator uses human-paced defaults, chunking, stop and both playback engines", () => {
+  assert.match(chatApp, /DEFAULT_NARRATOR_RATE\s*=\s*0\.90/);
+  assert.match(chatApp, /utterance\.rate\s*=\s*getNarratorRate\(\)/);
+  assert.match(chatApp, /const chunks = plainText\.match/);
+  assert.match(chatApp, /speechQueue = cleanChunks/);
+  assert.match(chatApp, /window\.AskMeNativeTTS\.speakChunk/);
+  assert.match(chatApp, /window\.speechSynthesis\.speak/);
+  assert.match(chatApp, /window\.speechSynthesis\.cancel/);
+  assert.match(chatApp, /askme_narrator_auto_read/);
+  assert.match(chatHtml, /id="narrator-speed"[^>]*min="0\.70"[^>]*max="1\.50"[^>]*value="0\.90"/);
+  assert.match(chatHtml, /id="narrator-auto-read"/);
+});
 
 test("voice studio controller and inference worker expose their ES module entry points", () => {
   assert.match(voiceApp, /class PocketVoice/);
