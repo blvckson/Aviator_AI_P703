@@ -49,6 +49,31 @@
         <ul id="source-list"></ul>
       </div>
     </section>
+    <section class="card github-agent-card" id="github-agent">
+      <h2>GitHub Engineering Agent</h2>
+      <p>Ask.Me can inspect a selected repository, prepare code changes, commit them to a new branch, open a pull request, run builds, inspect failed checks, and prepare repairs.</p>
+      <label for="github-repo">GitHub repository (owner/name)</label>
+      <input id="github-repo" type="text" placeholder="your-account/your-repository" autocomplete="off">
+      <label for="github-token">Fine-grained GitHub access token</label>
+      <input id="github-token" type="password" placeholder="Token limited to this repository" autocomplete="off">
+      <p class="small">Required permissions: Contents read/write, Pull requests read/write, and Actions read/write. The token is sent only to api.github.com; it is never sent to Ask.Me's AI endpoint or saved by this page. Clear it when finished. Never paste a token into the normal chat.</p>
+      <label for="github-coding-task">Engineering task</label>
+      <textarea id="github-coding-task" rows="5" placeholder="Example: Fix the login crash, add regression tests, preserve existing features, then build and verify."></textarea>
+      <div class="controls">
+        <button id="github-coding-run" type="button">Inspect, Code, Commit & Open PR</button>
+        <button id="github-coding-clear" class="secondary-button" type="button">Clear Token</button>
+      </div>
+      <div class="github-agent-actions">
+        <label for="github-coding-workflow">Build/test workflow</label>
+        <select id="github-coding-workflow"><option value="">Choose build/test workflow</option></select>
+        <button id="github-coding-build" type="button" disabled>Build / Test PR Branch</button>
+        <button id="github-coding-check" class="secondary-button" type="button" disabled>Check PR & Debug</button>
+        <button id="github-coding-repair" class="secondary-button" type="button" disabled>Repair Failed Checks</button>
+        <button id="github-coding-deploy" class="secondary-button" type="button">Deploy Verified Default Branch</button>
+      </div>
+      <div id="github-coding-status" class="status" aria-live="polite">No repository changes have been made. Changes are committed to a feature branch and submitted for review; the agent never auto-merges. Deployment is blocked until a PR is merged, the default branch is verified, all required checks pass, and you explicitly confirm.</div>
+      <pre id="github-coding-result" class="github-agent-result" aria-live="polite"></pre>
+    </section>
   </main>
 
   <div id="narrator-modal" class="modal" hidden>
@@ -60,6 +85,6 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js"></script>\n  <script src="coding-agent-guard.js"></script>\n  <script src="github-agent.js"></script>
 </body>
 </html>
