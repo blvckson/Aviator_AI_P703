@@ -189,12 +189,6 @@ function buildQualityPrompt(userPrompt) {
   if (/html|web app|form|input|button|accessible|task manager/i.test(userPrompt)) {
     rules.push("Accessibility self-audit: inspect every generated input, button and select control. Each must have an accessible name through a connected <label for> or a non-empty aria-label/aria-labelledby. Do not rely on placeholder text alone.");
   }
-  if (/debug|fix|repair|broken|error|bug|crash/i.test(userPrompt)) {
-    rules.push("Debugging quality: identify the root cause, show the corrected implementation, explain why it fixes the defect, and include a regression test for the reported failure.");
-  }
-  if (/reason|logic|calculate|solve|prove|analy[sz]e/i.test(userPrompt)) {
-    rules.push("Reasoning quality: work through the key steps, verify the conclusion against the original conditions, and state uncertainty or ambiguity rather than guessing.");
-  }
   if (/pull request|\bPR\b|push|pull|commit|deploy|deployment|github action|repository/i.test(userPrompt)) {
     rules.push("Repository-operation honesty: do not claim a repository was read, changed, committed, pushed, pulled, built, or deployed unless the corresponding authenticated operation was actually completed and its result verified. Otherwise state what access or operation is missing.");
   }
