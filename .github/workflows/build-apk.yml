@@ -17,6 +17,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate frontend syntax and regression tests
+        run: |
+          node --check public/app.js
+          node --check public/github-agent.js
+          node --check public/coding-agent-guard.js
+          node --test tests/*.test.cjs
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -47,7 +54,15 @@ jobs:
 
           test -s "$VOICE_DIR/index.html"
           test -s "$VOICE_DIR/app.js"
-          test -s "$MODEL_DIR/flow_lm_main_int8.onnx"
+          test -s "$VOICE_DIR/inference-worker.js"
+          test -s "$VOICE_DIR/PCMPlayerWorklet.js"
+          test -s "$VOICE_DIR/sentencepiece.js"
+          test -s "$ORT_DIR/ort.min.js"
+          test -s "$ORT_DIR/ort-wasm.wasm"
+          for f in bundle.json tokenizer.model bos_before_voice.npy mimi_encoder_int8.onnx text_conditioner_int8.onnx flow_lm_main_int8.onnx flow_lm_flow_int8.onnx mimi_decoder_int8.onnx; do
+            test -s "$MODEL_DIR/$f" || { echo "Missing or empty voice model asset: $f"; exit 1; }
+          done
+          echo "Voice cloning studio and all required model/runtime assets are present."
           du -sh "$VOICE_DIR"
 
       - name: Set up Gradle

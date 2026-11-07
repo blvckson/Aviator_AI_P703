@@ -36,3 +36,35 @@ button:disabled { opacity: .6; cursor: wait; }
 .voice-upload { margin-top:12px; padding:14px; border:1px solid #ddd; border-radius:10px; }
 .small { font-size:13px; line-height:1.45; color:#555; }
 .secondary-button { background:#666; }
+
+
+.header-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+.narrator-controls { margin-top:16px; padding:14px; border:1px solid #d8dee6; border-radius:10px; background:#fafbfd; }
+.narrator-heading { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+#narrator-speed { display:block; width:100%; margin:8px 0 12px; accent-color:#111; }
+.narrator-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.auto-read { display:flex; align-items:center; gap:8px; margin:0; font-weight:normal; }
+.auto-read input { width:18px; height:18px; }
+.narrator-actions .secondary-button { width:auto; margin:0; padding:9px 14px; font-size:14px; }
+@media (max-width:520px) {
+  .header-row { flex-direction:column; }
+  .header-actions { width:100%; justify-content:stretch; }
+  .header-actions button { flex:1; }
+}
+
+
+.github-agent-card { margin-top:18px; }
+.github-agent-card h2 { margin:0 0 8px; }
+.github-agent-card input, .github-agent-card select, .github-agent-card textarea {
+  width:100%; padding:12px; margin:6px 0 14px; border:1px solid #bbb; border-radius:8px; font:inherit;
+}
+.github-agent-card .small { font-size:13px; line-height:1.5; color:#555; }
+.github-agent-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; align-items:end; }
+.github-agent-actions label { grid-column:1/-1; margin:0; }
+.github-agent-actions select { grid-column:1/-1; }
+.github-agent-actions button { margin:0; padding:11px 8px; font-size:14px; }
+.github-agent-result { white-space:pre-wrap; overflow-wrap:anywhere; max-height:420px; overflow:auto; background:#f4f6f8; border-radius:8px; padding:12px; font-size:12px; }
+@media (max-width:520px) {
+  .github-agent-actions { grid-template-columns:1fr; }
+  .github-agent-actions label, .github-agent-actions select { grid-column:1; }
+}

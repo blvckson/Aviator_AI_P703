@@ -1,0 +1,107 @@
+name: Ask.Me AI Live Quality Benchmark
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run identical live reasoning, research, coding, debugging and app-building tests
+        env:
+          API_BASE: https://freeapp-ai.lovesongmelodies.workers.dev
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const base = process.env.API_BASE;
+          const cases = [
+            {id:'reasoning-logic', category:'reasoning', prompt:'Three people A, B and C make statements: A says B is lying; B says C is lying; C says A and B are both lying. Exactly one person tells the truth. Determine who tells the truth and verify every statement.', checks:[['mentions all three people',/\bA\b[\s\S]*\bB\b[\s\S]*\bC\b/i],['explains consistency',/because|therefore|consistent|contradict/i],['addresses exactly one truth teller',/exactly one|only one|no consistent|impossible|ambiguous/i]]},
+            {id:'reasoning-math', category:'reasoning', prompt:'A bat and a ball cost $1.10 total. The bat costs exactly $1.00 more than the ball. What does the ball cost? Show the equation and answer in cents.', checks:[['correct 5-cent answer',/5 cents|\$0\.05|0\.05 dollars/i],['shows equation or calculation',/x\s*\+\s*\(?x\s*\+\s*1|1\.10|110 cents/i],['explains the difference',/1\.00|100 cents|one dollar/i]]},
+            {id:'research-android', category:'research', prompt:'Research the official Android documentation for MediaProjection screen capture requirements, including Android 14 changes. Explain MediaProjectionManager.createScreenCaptureIntent(), the user-consent flow, and the foreground service type/permission FOREGROUND_SERVICE_MEDIA_PROJECTION. Explicitly do not tell ordinary third-party apps to request the privileged CAPTURE_VIDEO_OUTPUT or CAPTURE_AUDIO_OUTPUT permissions. Give at least two direct official Android developer URLs and distinguish verified facts from recommendations.', checks:[['official Android sources',/developer\.android\.com/i],['two source URLs',/https?:\/\/[\s\S]*https?:\/\//i],['MediaProjection API entry point',/MediaProjectionManager|createScreenCaptureIntent/i],['consent and Android 14',/consent|user approval/i],['Android 14 foreground service requirements',/FOREGROUND_SERVICE_MEDIA_PROJECTION|foreground service[\\s\\S]{0,100}mediaProjection/i],['does not request privileged capture permissions',null],['live research metadata',null]]},
+            {id:'research-cloud', category:'research', prompt:'Research current official Cloudflare Workers AI documentation for model inference and limits. Give direct official documentation URLs, separate facts from assumptions, and say when current source retrieval is unavailable.', checks:[['official Cloudflare source',/developers\.cloudflare\.com/i],['source URL',/https?:\/\//i],['Workers AI details',/Workers AI/i],['separates facts and uncertainty',/documented|official|uncertain|assumption|verify/i],['live research metadata',null]]},
+            {id:'coding-python', category:'coding', prompt:'Write a complete Python function stable_topological_sort(nodes, edges) that preserves input order for ties, validates BOTH source and target of every edge against nodes, detects cycles with ValueError, uses an efficient queue/priority structure rather than repeated list pop(0), and includes at least four runnable unit tests. Explain complexity.', checks:[['function implementation',/def stable_topological_sort/i],['cycle detection',/cycle|in.?degree/i],['unknown endpoint validation',/unknown|endpoint|not in nodes/i],['validates source endpoint',/edge\\[0\\].*(?:not in|unknown)|(?:not in|unknown).*edge\\[0\\]/i],['efficient stable queue',/deque|heapq|priority queue/i],['four tests',/test_|unittest|pytest/i],['complexity',/O\(/i]]},
+            {id:'coding-js', category:'coding', prompt:'Write a robust JavaScript async function fetchActiveUsers(ids, fetchUser) that fetches all users concurrently, preserves order, filters active users, handles a rejected fetch explicitly, and includes at least three tests.', checks:[['function implementation',/fetchActiveUsers/i],['waits for all promises',/Promise\.all/i],['filters active users',/filter[\s\S]*active/i],['handles rejected promise',/try|catch|allSettled|reject/i],['includes tests',/assert|test\(|describe\(/i]]},
+            {id:'debugging-async', category:'debugging', prompt:'Debug: async function activeUsers(ids){ const users=ids.map(async id=>await fetchUser(id)); return users.filter(user=>user.active); } Explain why it fails, provide corrected code using Promise.all, and a test.', checks:[['identifies promise array bug',/promise|array of promises/i],['uses Promise.all',/Promise\.all/i],['corrected implementation',/async function|const activeUsers/i],['test or expected output',/test|assert|expected/i]]},
+            {id:'debugging-state', category:'debugging', prompt:'A UI submit button is disabled before an async request. If fetch rejects, the button remains disabled forever. Provide a complete async function that awaits the fetch and response parsing inside try/catch/finally so finally runs only after the request settles, plus a test that verifies recovery after failure.', checks:[['uses finally',/finally/i],['awaits the async request',/await\s+(?:fetch|.*request)/i],['restores enabled state',/disabled\s*=\s*false/i],['handles errors',/catch|error/i],['includes test',/test|assert|expect/i]]},
+            {id:'app-building-html', category:'app-building', prompt:'Create a complete runnable single-file HTML task manager with add, complete, delete, All/Active/Completed filters, localStorage persistence, an explicit <label for> or aria-label for EVERY input and button, and an empty state. It must have no external script or stylesheet dependencies; include no <script src> or external <link href>.', checks:[['HTML document',/<!doctype html|<!DOCTYPE html/i],['local storage',/localStorage/i],['add and delete',/addEventListener|appendChild/i],['completion and filters',/completed|complete[\s\S]*filter|filter[\s\S]*active/i],['accessible labels on controls',/<label\\b|aria-label\\s*=/i],['no external script or stylesheet',null]]},
+            {id:'app-building-android', category:'app-building', prompt:'Design a build-ready offline-first Android inventory MVP with Kotlin, SQLite, stock-in/out transactions, low-stock alerts, CSV export, and later sync. Provide architecture, schema, transaction pseudocode, conflict handling, eight acceptance tests and Gradle build steps. Do not claim it was compiled.', checks:[['architecture',/architecture|module|data flow/i],['database schema',/SQLite|CREATE TABLE|schema/i],['transaction logic',/transaction|stock.?in|stock.?out/i],['offline conflict handling',/offline|conflict|sync|idempot/i],['eight acceptance tests',/acceptance test|test case|given.*when.*then/i],['build instructions and honest status',/gradle|assembleDebug/i],['no false compilation claim',/not compiled|not run|not tested|cannot claim/i]]}
+          ];
+          async function run(item) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 90000);
+            const started = Date.now();
+            try {
+              const response = await fetch(base + '/api/generate', {
+                method: 'POST',
+                headers: {'content-type':'application/json'},
+                body: JSON.stringify({prompt:item.prompt, images:[], history:[], memorySummary:''}),
+                signal: controller.signal
+              });
+              const data = await response.json().catch(() => ({}));
+              const answer = String(data.result || data.answer || '');
+              const checks = item.checks.map(([name, pattern]) => ({
+                name,
+                pass: name === 'live research metadata'
+                  ? data.researched === true && Array.isArray(data.sources) && data.sources.length >= 2 && data.sources.some(s => /^https?:\/\//i.test(String(s.url || '')))
+                  : name === 'does not request privileged capture permissions'
+                    ? !/(?:must|need to|required to|request)\s+(?:the\s+)?(?:android\.)?permission[^.\n]{0,100}CAPTURE_(?:VIDEO|AUDIO)_OUTPUT/i.test(answer)
+                    : name === 'no external script or stylesheet'
+                      ? !/<script[^>]+src=|<link[^>]+href=/i.test(answer)
+                      : pattern.test(answer)
+              }));
+              checks.push({name:'HTTP 200',pass:response.status === 200});
+              checks.push({name:'non-empty answer',pass:answer.trim().length >= 120});
+              checks.push({name:'no internal tool markup',pass:!/<dots_function_call>|tool_call|function_call|assistant to=/i.test(answer)});
+              return {id:item.id,category:item.category,status:response.status,latencyMs:Date.now()-started,checks,score:Math.round(100*checks.filter(c=>c.pass).length/checks.length),answerExcerpt:answer.slice(0,1200),error:response.ok?null:(data.error||data.detail||'HTTP error')};
+            } catch (e) {
+              return {id:item.id,category:item.category,status:null,latencyMs:Date.now()-started,checks:item.checks.map(([name])=>({name,pass:false})),score:0,error:String(e.message||e)};
+            } finally { clearTimeout(timer); }
+          }
+          (async () => {
+            const results = [];
+            for (const item of cases) {
+              const row = await run(item);
+              results.push(row);
+              console.log('Completed benchmark tasks: ' + results.length + '/' + cases.length);
+            }
+            const categories = {};
+            for (const category of [...new Set(cases.map(x=>x.category))]) {
+              const rows = results.filter(x=>x.category===category);
+              categories[category] = Math.round(rows.reduce((s,x)=>s+x.score,0)/rows.length);
+            }
+            const allChecks = results.flatMap(x=>x.checks);
+            const report = {
+              benchmark:'Ask.Me AI 10-task live quality benchmark',
+              createdAt:new Date().toISOString(),
+              endpoint:base+'/api/generate',
+              method:'Identical live prompts with heuristic rubric checks; not expert human grading or proof of real repository actions.',
+              categories,
+              overallPercent:Math.round(100*allChecks.filter(x=>x.pass).length/allChecks.length),
+              passedChecks:allChecks.filter(x=>x.pass).length,
+              totalChecks:allChecks.length,
+              results
+            };
+            fs.mkdirSync('benchmark-results',{recursive:true});
+            fs.writeFileSync('benchmark-results/askme-benchmark.json',JSON.stringify(report,null,2));
+            console.log(JSON.stringify({categories,overallPercent:report.overallPercent,passedChecks:report.passedChecks,totalChecks:report.totalChecks,results:results.map(({id,category,score,status,latencyMs,error,checks})=>({id,category,score,status,latencyMs,error,failed:checks.filter(c=>!c.pass).map(c=>c.name)}))},null,2));
+            if (report.overallPercent !== 100) {
+              console.error('QUALITY GATE FAILED: live benchmark must reach 100% before release. Heuristic score is not a substitute for human review.');
+              process.exitCode=1;
+            }
+          })().catch(error=>{console.error(error);process.exitCode=1;});
+          NODE
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AskMe-live-benchmark-results
+          path: benchmark-results/askme-benchmark.json
+          if-no-files-found: warn
+          retention-days: 30
