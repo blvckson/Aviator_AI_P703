@@ -23,7 +23,8 @@ test("GitHub token is not persisted or sent to the AI generation endpoint", () =
   assert.match(agent, /Authorization":\s*"Bearer "\s*\+\s*token/);
   assert.match(agent, /fetch\(API_BASE\s*\+\s*"\/api\/generate"/);
   assert.doesNotMatch(agent, /localStorage\.setItem\([^)]*token/i);
-  const aiRequest = agent.slice(agent.indexOf('fetch(API_BASE + "/api/generate"'), agent.indexOf('fetch(API_BASE + "/api/generate"') + 1200);
+  const start = agent.indexOf('fetch(API_BASE + "/api/generate"');
+  const aiRequest = agent.slice(start, start + 1200);
   assert.doesNotMatch(aiRequest, /Authorization|github-token|tokenInput/);
 });
 
@@ -50,7 +51,8 @@ test("production deployment is gated by merged PR, default branch, successful ch
 });
 
 test("guard blocks traversal, secrets and unrequested workflow edits", () => {
-  assert.match(guard, /path\\.includes/);\n  assert.match(guard, /\\.env/);
+  assert.match(guard, /path\.includes/);
+  assert.match(guard, /\.env/);
   assert.match(guard, /allowWorkflowChanges !== true/);
   assert.match(guard, /MAX_FILES/);
 });
