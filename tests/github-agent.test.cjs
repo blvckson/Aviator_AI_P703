@@ -35,9 +35,11 @@ test("agent creates feature branch, atomic commit and pull request", () => {
   assert.match(agent, /askme-ai\//);
 });
 
-test("agent dispatches builds, checks all PR workflows and uses actual failure logs for repairs", () => {
+test("agent dispatches builds, checks all exact-commit branch workflows and uses actual failure logs for repairs", () => {
   assert.match(agent, /dispatchBuildWorkflow/);
   assert.match(agent, /monitorPullRequestChecks/);
+  assert.match(agent, /run\.head_sha === commitSha && run\.head_branch === branch/);
+  assert.doesNotMatch(agent, /run\.pull_requests \|\| \[\]\)\.some/);
   assert.match(agent, /failure_log_excerpts/);
   assert.match(agent, /repairFailedPullRequest/);
   assert.match(agent, /\/actions\/jobs\/" \+ job\.id \+ "\/logs/);
