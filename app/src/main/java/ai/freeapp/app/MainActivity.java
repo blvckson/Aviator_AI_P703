@@ -16,10 +16,15 @@ import androidx.webkit.WebViewAssetLoader;
 import androidx.webkit.WebViewClientCompat;
 import android.webkit.WebChromeClient;
 import android.webkit.PermissionRequest;
+import android.webkit.JavascriptInterface;
+import android.speech.tts.TextToSpeech;
+import java.util.Locale;
 
 public class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST = 1002;
     private ValueCallback<Uri[]> filePathCallback;
+    private TextToSpeech textToSpeech;
+    private volatile boolean ttsReady = false;
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -37,6 +42,17 @@ public class MainActivity extends Activity {
         final WebViewAssetLoader assetLoader = new WebViewAssetLoader.Builder()
                 .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
                 .build();
+
+        textToSpeech = new TextToSpeech(this, status -> {
+            ttsReady = status == TextToSpeech.SUCCESS;
+            if (ttsReady) {
+                int language = textToSpeech.setLanguage(Locale.getDefault());
+                if (language == TextToSpeech.LANG_MISSING_DATA || language == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    textToSpeech.setLanguage(Locale.US);
+                }
+            }
+        });
+        web.addJavascriptInterface(new NativeNarrator(), "AskMeNativeTTS");
 
         web.setWebChromeClient(new WebChromeClient() {
             @Override public void onPermissionRequest(final PermissionRequest request) {
@@ -87,6 +103,27 @@ public class MainActivity extends Activity {
         setContentView(web);
     }
 
+    private final class NativeNarrator {
+        @JavascriptInterface
+        public boolean speakChunk(String text, float rate, boolean append) {
+            if (!ttsReady || textToSpeech == null || text == null || text.isEmpty()) return false;
+            float safeRate = Math.max(0.70f, Math.min(1.50f, rate));
+            textToSpeech.setSpeechRate(safeRate);
+            int queueMode = append ? TextToSpeech.QUEUE_ADD : TextToSpeech.QUEUE_FLUSH;
+            return textToSpeech.speak(text, queueMode, new Bundle(), "askme-" + System.nanoTime()) == TextToSpeech.SUCCESS;
+        }
+
+        @JavascriptInterface
+        public void stop() {
+            if (textToSpeech != null) textToSpeech.stop();
+        }
+
+        @JavascriptInterface
+        public boolean isReady() {
+            return ttsReady;
+        }
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -107,6 +144,11 @@ public class MainActivity extends Activity {
         if (filePathCallback != null) {
             filePathCallback.onReceiveValue(null);
             filePathCallback = null;
+        }
+        if (textToSpeech != null) {
+            textToSpeech.stop();
+            textToSpeech.shutdown();
+            textToSpeech = null;
         }
         super.onDestroy();
     }
