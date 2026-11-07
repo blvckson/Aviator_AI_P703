@@ -136,8 +136,8 @@
     return commit.sha;
   }
   async function monitorPullRequestChecks(token, repo, branch, pullRequestNumber, commitSha) {
-    // A branch can have several workflows. Never report success from the first
-    // completed run: wait for every PR-triggered run attached to this exact commit.
+    // GitHub may omit pull_requests metadata for workflow_dispatch and some push-triggered
+    // runs. Match the exact branch AND commit SHA instead, then evaluate every run.
     const deadline = Date.now() + 600000;
     let latestRuns = [];
     let lastError = null;
@@ -147,8 +147,7 @@
           encodeURIComponent(commitSha) + "&per_page=100";
         const runs = await gh(token, query);
         latestRuns = (runs.workflow_runs || []).filter(run =>
-          run.head_sha === commitSha &&
-          (run.pull_requests || []).some(pr => Number(pr.number) === Number(pullRequestNumber))
+          run.head_sha === commitSha && run.head_branch === branch
         );
         if (latestRuns.length && latestRuns.every(run => run.status === "completed")) break;
       } catch (error) {
