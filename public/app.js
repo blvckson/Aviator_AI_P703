@@ -157,6 +157,28 @@ if (imageInput) imageInput.addEventListener("change", () => {
 });
 if (buildButton) buildButton.addEventListener("click", askAI);
 
+function buildQualityPrompt(userPrompt) {
+  const rules = [];
+  if (/research|latest|current|today|source|citation|verify|fact.?check/i.test(userPrompt)) {
+    rules.push("Research integrity: retrieve current sources when live research is available; include direct, relevant source URLs; distinguish verified facts from inference; never invent sources or citations. If live retrieval is unavailable, state that clearly and do not claim that research was completed.");
+  }
+  if (/build|create|develop|implement|app|software|program|code|function|script/i.test(userPrompt)) {
+    rules.push("Engineering quality: deliver complete, coherent, runnable code rather than a sketch when code is requested; validate inputs; handle failures; include meaningful tests and build/run steps. For user interfaces, use semantic HTML and accessible labels for every control, and avoid external dependencies unless requested. Never claim that code was compiled or executed unless it actually was.");
+  }
+  if (/debug|fix|repair|broken|error|bug|crash/i.test(userPrompt)) {
+    rules.push("Debugging quality: identify the root cause, show the corrected implementation, explain why it fixes the defect, and include a regression test for the reported failure.");
+  }
+  if (/reason|logic|calculate|solve|prove|analy[sz]e/i.test(userPrompt)) {
+    rules.push("Reasoning quality: work through the key steps, verify the conclusion against the original conditions, and state uncertainty or ambiguity rather than guessing.");
+  }
+  if (/pull request|\bPR\b|push|pull|commit|deploy|deployment|github action|repository/i.test(userPrompt)) {
+    rules.push("Repository-operation honesty: do not claim a repository was read, changed, committed, pushed, pulled, built, or deployed unless the corresponding authenticated operation was actually completed and its result verified. Otherwise state what access or operation is missing.");
+  }
+  return rules.length
+    ? userPrompt + "\n\nAsk.Me quality requirements:\n- " + rules.join("\n- ")
+    : userPrompt;
+}
+
 async function askAI() {
   const prompt = String(promptBox && promptBox.value || "").trim();
   if (!prompt && !selectedImages.length) {
@@ -184,7 +206,7 @@ async function askAI() {
     const response = await fetch(API_BASE + "/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, images, history: [], memorySummary: "" }),
+      body: JSON.stringify({ prompt: buildQualityPrompt(prompt), images, history: [], memorySummary: "" }),
       ...(controller ? { signal: controller.signal } : {})
     });
     const data = await response.json().catch(() => ({}));
@@ -195,7 +217,12 @@ async function askAI() {
     resultBox.textContent = answer;
     renderMedia(data.media);
     renderSources(data.sources);
-    statusBox.textContent = data.researched ? "Done — live research was used." : "Done.";
+    const researchIntent = /research|latest|current|today|source|citation|verify|fact.?check/i.test(prompt);
+    const hasVerifiedSources = data.researched === true && Array.isArray(data.sources) &&
+      data.sources.some(source => source && typeof source.url === "string" && /^https?:\/\//i.test(source.url));
+    statusBox.textContent = hasVerifiedSources
+      ? "Done — live research sources were returned."
+      : (researchIntent ? "Answer returned, but live source verification was not confirmed." : "Done.");
     if (narratorAutoRead && narratorAutoRead.checked) speakText(answer);
   } catch (error) {
     const timedOut = error && (error.name === "AbortError" || /aborted/i.test(error.message || ""));
