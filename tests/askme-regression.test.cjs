@@ -55,13 +55,16 @@ test("research links and media URLs are validated before rendering", () => {
   assert.match(app, /noopener noreferrer/);
 });
 
-test("task-specific quality instructions cover research, engineering, debugging and GitHub honesty", () => {
-  assert.match(app, /function buildQualityPrompt\(userPrompt\)/);
+test("quality additions target research and engineering while preserving reasoning and debugging paths", () => {
+  assert.match(app, /function buildQualityPrompt\\(userPrompt\\)/);
   assert.match(app, /Research integrity:/);
   assert.match(app, /Engineering quality:/);
-  assert.match(app, /Debugging quality:/);
+  assert.match(app, /Graph\\/code self-audit:/);
+  assert.match(app, /Accessibility self-audit:/);
   assert.match(app, /Repository-operation honesty:/);
-  assert.match(app, /prompt: buildQualityPrompt\(effectivePrompt\)/);
+  assert.doesNotMatch(app, /Debugging quality:/);
+  assert.doesNotMatch(app, /Reasoning quality:/);
+  assert.match(app, /prompt: buildQualityPrompt\\(effectivePrompt\\)/);
 });
 
 test("research intent is not reported as verified without returned source metadata", () => {
