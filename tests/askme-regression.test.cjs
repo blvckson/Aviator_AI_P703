@@ -5,12 +5,13 @@ const vm = require("node:vm");
 
 const app = fs.readFileSync("public/app.js", "utf8");
 const html = fs.readFileSync("public/index.html", "utf8");
+const activity = fs.readFileSync("app/src/main/java/ai/freeapp/app/MainActivity.java", "utf8");
 
 test("Ask.Me frontend JavaScript parses", () => {
   assert.doesNotThrow(() => new vm.Script(app, { filename: "public/app.js" }));
 });
 
-test("narrator runtime dependencies are defined and legacy undefined names are gone", () => {
+test("narrator runtime dependencies are defined and stale names are gone", () => {
   for (const name of ["speakText", "stopNarrator", "speakNextChunk", "getNarratorRate"]) {
     assert.match(app, new RegExp("function\\s+" + name + "\\s*\\("));
   }
@@ -19,27 +20,35 @@ test("narrator runtime dependencies are defined and legacy undefined names are g
   }
 });
 
-test("narrator defaults to a slightly slow rate and supports adjustable playback", () => {
-  assert.match(app, /DEFAULT_NARRATOR_RATE\\s*=\\s*0\\.90/);
-  assert.match(html, /id="narrator-speed"[^>]*min="0\\.70"[^>]*max="1\\.50"/);
-  assert.match(app, /utterance\\.rate\\s*=\\s*getNarratorRate\\(\\)/);
-  assert.match(app, /window\\.speechSynthesis\\.cancel\\(\\)/);
+test("narrator defaults to 0.90x and supports 0.70x to 1.50x speed", () => {
+  assert.match(app, /DEFAULT_NARRATOR_RATE\s*=\s*0\.90/);
+  assert.match(html, /id="narrator-speed"[^>]*min="0\.70"[^>]*max="1\.50"/);
+  assert.match(app, /utterance\.rate\s*=\s*getNarratorRate\(\)/);
+});
+
+test("native Android TTS bridge and browser fallback are present", () => {
+  assert.match(activity, /addJavascriptInterface\(new NativeNarrator\(\), "AskMeNativeTTS"\)/);
+  assert.match(activity, /@JavascriptInterface/);
+  assert.match(activity, /textToSpeech\.shutdown\(\)/);
+  assert.match(app, /window\.AskMeNativeTTS\.speakChunk/);
+  assert.match(app, /window\.speechSynthesis\.speak/);
 });
 
 test("automatic narration is opt-in and persisted", () => {
   assert.match(html, /id="narrator-auto-read"/);
   assert.match(app, /askme_narrator_auto_read/);
-  assert.match(app, /narratorAutoRead\\.checked\\)\\s*speakText/);
+  assert.match(app, /narratorAutoRead\.checked\)\s*speakText/);
 });
 
 test("AI requests handle empty responses, timeouts, and always release the submit button", () => {
-  assert.match(app, /REQUEST_TIMEOUT_MS\\s*=\\s*120000/);
-  assert.match(app, /if \\(!answer\\.trim\\(\\)\\) throw new Error/);
-  assert.match(app, /finally \\{/);
-  assert.match(app, /buildButton\\.disabled\\s*=\\s*false/);
+  assert.match(app, /REQUEST_TIMEOUT_MS\s*=\s*120000/);
+  assert.match(app, /if \(!answer\.trim\(\)\) throw new Error/);
+  assert.match(app, /finally\s*\{/);
+  assert.match(app, /buildButton\.disabled\s*=\s*false/);
 });
 
-test("research links and media URLs are restricted to HTTP(S)", () => {
-  assert.match(app, /source\\.url/);\n  assert.match(app, /item\\.url/);
+test("research links and media URLs are validated before rendering", () => {
+  assert.match(app, /source\.url/);
+  assert.match(app, /item\.url/);
   assert.match(app, /noopener noreferrer/);
 });
