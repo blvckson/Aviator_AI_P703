@@ -86,6 +86,31 @@ public class MainActivity extends Activity {
         });
 
         web.setWebViewClient(new WebViewClientCompat() {
+            private boolean isLocalAppAsset(Uri uri) {
+                return uri != null && "https".equalsIgnoreCase(uri.getScheme()) &&
+                        "appassets.androidplatform.net".equalsIgnoreCase(uri.getHost()) &&
+                        uri.getPath() != null && uri.getPath().startsWith("/assets/");
+            }
+
+            @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                Uri uri = request.getUrl();
+                if (isLocalAppAsset(uri)) return false;
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW, uri));
+                } catch (android.content.ActivityNotFoundException ignored) { }
+                return true;
+            }
+
+            @Override @SuppressWarnings("deprecation")
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                Uri uri = android.net.Uri.parse(url);
+                if (isLocalAppAsset(uri)) return false;
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW, uri));
+                } catch (android.content.ActivityNotFoundException ignored) { }
+                return true;
+            }
+
             @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 return assetLoader.shouldInterceptRequest(request.getUrl());
             }
