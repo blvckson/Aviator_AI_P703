@@ -57,7 +57,7 @@ class PocketVoice {
 
     // Metrics
     this.rtfMovingAvg = 0;
-    this.playbackSpeed = 1;
+    this.playbackSpeed = 0.90;
 
     // Built-in voices list
     this.builtinVoices = [];
