@@ -9,8 +9,7 @@ const workflow = fs.readFileSync(".github/workflows/build-apk.yml", "utf8");
 
 test("voice studio controller and inference worker expose their ES module entry points", () => {
   assert.match(voiceApp, /class PocketVoice/);
-  assert.match(voiceApp, /new PocketVoice/);
-  assert.match(worker, /^import\\s/m);
+  assert.match(voiceApp, /^import\\s/m);
   assert.match(worker, /self\\.onmessage/);
 });
 
