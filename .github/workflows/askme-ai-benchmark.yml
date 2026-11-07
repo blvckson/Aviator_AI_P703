@@ -35,7 +35,7 @@ jobs:
           ];
           async function run(item) {
             const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 90000);
+            const timer = setTimeout(() => controller.abort(), 45000);
             const started = Date.now();
             try {
               const response = await fetch(base + '/api/generate', {
@@ -62,7 +62,7 @@ jobs:
           }
           (async () => {
             const results = [];
-            for (const item of cases) results.push(await run(item));
+            for (let i = 0; i < cases.length; i += 3) {\n              const batch = await Promise.all(cases.slice(i, i + 3).map(run));\n              results.push(...batch);\n              console.log('Completed benchmark tasks: ' + results.length + '/' + cases.length);\n            }
             const categories = {};
             for (const category of [...new Set(cases.map(x=>x.category))]) {
               const rows = results.filter(x=>x.category===category);
