@@ -23,6 +23,7 @@ import java.util.Locale;
 public class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST = 1002;
     private ValueCallback<Uri[]> filePathCallback;
+    private boolean fileChooserMultiple = false;
     private TextToSpeech textToSpeech;
     private volatile boolean ttsReady = false;
 
@@ -73,9 +74,19 @@ public class MainActivity extends Activity {
 
                 Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType("audio/*");
+                String[] acceptedTypes = fileChooserParams.getAcceptTypes();
+                if (acceptedTypes == null || acceptedTypes.length == 0) {
+                    intent.setType("*/*");
+                } else if (acceptedTypes.length == 1 && acceptedTypes[0] != null && acceptedTypes[0].contains("/")) {
+                    intent.setType(acceptedTypes[0]);
+                } else {
+                    intent.setType("*/*");
+                    intent.putExtra(Intent.EXTRA_MIME_TYPES, acceptedTypes);
+                }
+                fileChooserMultiple = fileChooserParams.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE;
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, fileChooserMultiple);
                 try {
-                    startActivityForResult(Intent.createChooser(intent, "Select audio recording"), FILE_CHOOSER_REQUEST);
+                    startActivityForResult(Intent.createChooser(intent, "Select file(s)"), FILE_CHOOSER_REQUEST);
                     return true;
                 } catch (android.content.ActivityNotFoundException e) {
                     filePathCallback = null;
@@ -155,11 +166,18 @@ public class MainActivity extends Activity {
         if (requestCode == FILE_CHOOSER_REQUEST) {
             if (filePathCallback != null) {
                 Uri[] results = null;
-                if (resultCode == RESULT_OK && data != null && data.getData() != null) {
-                    results = new Uri[]{data.getData()};
+                if (resultCode == RESULT_OK && data != null) {
+                    if (fileChooserMultiple && data.getClipData() != null) {
+                        int count = data.getClipData().getItemCount();
+                        results = new Uri[count];
+                        for (int i = 0; i < count; i++) results[i] = data.getClipData().getItemAt(i).getUri();
+                    } else if (data.getData() != null) {
+                        results = new Uri[]{data.getData()};
+                    }
                 }
                 filePathCallback.onReceiveValue(results);
                 filePathCallback = null;
+                fileChooserMultiple = false;
             }
         }
     }
