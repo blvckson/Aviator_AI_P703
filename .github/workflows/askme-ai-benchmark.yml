@@ -62,7 +62,11 @@ jobs:
           }
           (async () => {
             const results = [];
-            for (let i = 0; i < cases.length; i += 3) {\n              const batch = await Promise.all(cases.slice(i, i + 3).map(run));\n              results.push(...batch);\n              console.log('Completed benchmark tasks: ' + results.length + '/' + cases.length);\n            }
+            for (let i = 0; i < cases.length; i += 3) {
+              const batch = await Promise.all(cases.slice(i, i + 3).map(run));
+              results.push(...batch);
+              console.log('Completed benchmark tasks: ' + results.length + '/' + cases.length);
+            }
             const categories = {};
             for (const category of [...new Set(cases.map(x=>x.category))]) {
               const rows = results.filter(x=>x.category===category);
