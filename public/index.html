@@ -20,12 +20,10 @@
     <section class="card">
       <label for="prompt">Ask Aviator AI anything</label>
       <textarea id="prompt" rows="8" placeholder="Ask a complex question or attach a screenshot..."></textarea>
-      <div class="controls">
-        <label class="file-button">
-          📷 Add screenshot/image
-          <input id="image-input" type="file" accept="image/*" multiple hidden>
-        </label>
-        <span id="file-status">No image selected</span>
+      <div class="chat-attachments">
+        <button id="attach-button" class="attach-button" type="button" aria-label="Attach image or document" title="Attach image or document">＋</button>
+        <input id="image-input" type="file" accept="image/*" multiple hidden>
+        <span id="file-status" class="file-status">Attach an image or document</span>
       </div>
       <div id="preview"></div>
       <button id="build-button" type="button">Ask Aviator AI</button>

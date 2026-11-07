@@ -18,6 +18,9 @@ if (narratorSettingsButton) narratorSettingsButton.addEventListener("click", () 
 if (narratorClose) narratorClose.addEventListener("click", () => { narratorModal.hidden = true; });
 
 const API_BASE = "https://freeapp-ai.lovesongmelodies.workers.dev";
+const attachButton = document.getElementById("attach-button");
+if (attachButton) attachButton.addEventListener("click", () => imageInput.click());
+
 imageInput.addEventListener("change", () => {
   selectedImages = Array.from(imageInput.files || []).slice(0, 4);
   preview.replaceChildren();
