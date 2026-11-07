@@ -479,7 +479,7 @@
       }
       const files = validation.files;
       status.textContent = "Creating a separate branch and committing " + files.length + " file(s)...";
-      const branch = "freeapp-ai/" + new Date().toISOString().replace(/[^0-9TZ]/g, "-").replace(/-+$/,"").toLowerCase() + "-" + window.AskMeCodingGuard.randomSuffix();
+      const branch = "askme-ai/" + new Date().toISOString().replace(/[^0-9TZ]/g, "-").replace(/-+$/,"").toLowerCase() + "-" + window.AskMeCodingGuard.randomSuffix();
       await createBranch(token, repo, branch, ref.object.sha);
       createdBranch = branch;
       const commitSha = await commitFilesAtomically(token, repo, branch, ref.object.sha, files);
