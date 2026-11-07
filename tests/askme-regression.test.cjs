@@ -91,3 +91,8 @@ test("Android file chooser respects accepted MIME types and multiple selection",
   assert.match(activity, /MODE_OPEN_MULTIPLE/);
   assert.match(activity, /getClipData\(\)/);
 });
+
+test("image-only prompts are converted into a valid non-empty API request", () => {
+  assert.match(app, /Please analyze the attached image/);
+  assert.match(app, /images\.length \?/);
+});
