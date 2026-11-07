@@ -51,6 +51,7 @@ function updateNarratorRateLabel() {
 function stopNarrator() {
   speechQueue = [];
   speaking = false;
+  if (window.AskMeNativeTTS && typeof window.AskMeNativeTTS.stop === "function") window.AskMeNativeTTS.stop();
   if ("speechSynthesis" in window) window.speechSynthesis.cancel();
   if (narratorStopButton) narratorStopButton.disabled = true;
   if (narratorButton) narratorButton.disabled = !lastAnswer;
@@ -88,13 +89,26 @@ function speakNextChunk() {
 function speakText(text) {
   const plainText = String(text || "").replace(/\s+/g, " ").trim();
   if (!plainText) return false;
+  stopNarrator();
+  const chunks = plainText.match(/[\s\S]{1,1800}(?:\s|$)/g) || [plainText];
+  const cleanChunks = chunks.map(chunk => chunk.trim()).filter(Boolean);
+  if (window.AskMeNativeTTS && typeof window.AskMeNativeTTS.speakChunk === "function" &&
+      typeof window.AskMeNativeTTS.isReady === "function" && window.AskMeNativeTTS.isReady()) {
+    const rate = getNarratorRate();
+    const accepted = cleanChunks.every((chunk, index) => window.AskMeNativeTTS.speakChunk(chunk, rate, index > 0));
+    if (accepted) {
+      speaking = true;
+      if (narratorStopButton) narratorStopButton.disabled = false;
+      if (narratorButton) narratorButton.disabled = true;
+      return true;
+    }
+    window.AskMeNativeTTS.stop();
+  }
   if (!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance === "undefined") {
     statusBox.textContent = "Speech playback is not supported by this Android WebView.";
     return false;
   }
-  stopNarrator();
-  const chunks = plainText.match(/[\s\S]{1,1800}(?:\s|$)/g) || [plainText];
-  speechQueue = chunks.map(chunk => chunk.trim()).filter(Boolean);
+  speechQueue = cleanChunks;
   speaking = true;
   if (narratorStopButton) narratorStopButton.disabled = false;
   if (narratorButton) narratorButton.disabled = true;
