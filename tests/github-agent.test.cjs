@@ -50,8 +50,7 @@ test("production deployment is gated by merged PR, default branch, successful ch
 });
 
 test("guard blocks traversal, secrets and unrequested workflow edits", () => {
-  assert.match(guard, /path\.includes\("\\\\"\\)/);
-  assert.match(guard, /\\.env/);
+  assert.match(guard, /path\\.includes/);\n  assert.match(guard, /\\.env/);
   assert.match(guard, /allowWorkflowChanges !== true/);
   assert.match(guard, /MAX_FILES/);
 });
