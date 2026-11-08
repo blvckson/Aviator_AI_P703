@@ -58,9 +58,10 @@ class PocketVoice {
     // Metrics
     this.rtfMovingAvg = 0;
     this.playbackSpeed = 0.90;
+    this.pendingVoiceUpload = null;
     try {
       const savedPlaybackSpeed = Number(localStorage.getItem("askme_voice_studio_playback_speed"));
-      if (Number.isFinite(savedPlaybackSpeed) && savedPlaybackSpeed >= 0.70 && savedPlaybackSpeed <= 1.50) {
+      if (Number.isFinite(savedPlaybackSpeed) && savedPlaybackSpeed >= 0.30 && savedPlaybackSpeed <= 1.50) {
         this.playbackSpeed = savedPlaybackSpeed;
       }
     } catch (_) {
@@ -198,7 +199,10 @@ class PocketVoice {
 
   bindEvents() {
     this.el.btnRecord.addEventListener("click", () => this.toggleRecording());
-    this.el.btnUpload.addEventListener("click", () => this.el.fileUpload.click());
+    this.el.btnUpload.addEventListener("click", () => {
+      // Keep the picker available even while ONNX is loading.
+      this.el.fileUpload.click();
+    });
     this.el.fileUpload.addEventListener("change", (e) => this.handleFileUpload(e));
 
     this.el.textInput.addEventListener("input", () => {
@@ -217,7 +221,7 @@ class PocketVoice {
     this.el.narratorSpeed.addEventListener("input", () => {
       const requestedRate = Number(this.el.narratorSpeed.value);
       if (!Number.isFinite(requestedRate)) return;
-      this.playbackSpeed = Math.min(1.50, Math.max(0.70, requestedRate));
+      this.playbackSpeed = Math.min(1.50, Math.max(0.30, requestedRate));
       this.el.narratorSpeed.value = String(this.playbackSpeed);
       this.el.narratorSpeedValue.textContent = `${this.playbackSpeed.toFixed(2)}×`;
       try {
@@ -260,7 +264,7 @@ class PocketVoice {
     this.updateStatus("Initializing…", "loading");
     this.el.btnGenerate.disabled = true;
     this.el.btnRecord.disabled = true;
-    this.el.btnUpload.disabled = true;
+    this.el.btnUpload.disabled = false;
     this.el.voiceSelect.disabled = true;
     this.el.langSelect.disabled = true;
     this.el.voiceGallery.classList.add("is-disabled");
@@ -472,8 +476,14 @@ class PocketVoice {
   async handleFileUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
+    if (!file.type.startsWith("audio/") && !/\\.(wav|mp3|m4a|aac|ogg|opus|webm|flac)$/i.test(file.name)) {
+      this.setCloneStatus("Unsupported file. Choose an audio file such as WAV, MP3, M4A or OGG.", "error");
+      e.target.value = "";
+      return;
+    }
     if (!this.isWorkerReady) {
-      this.setCloneStatus("Model still loading… please wait", "");
+      this.pendingVoiceUpload = file;
+      this.setCloneStatus(`Selected ${file.name}. It will be encoded when the voice model finishes loading.`, "");
       e.target.value = "";
       return;
     }
@@ -870,7 +880,7 @@ class PocketVoice {
     this.el.btnGenerate.classList.remove("is-loading");
     this.el.btnStop.style.display = "none";
     this.el.btnRecord.disabled = !this.isWorkerReady;
-    this.el.btnUpload.disabled = !this.isWorkerReady;
+    this.el.btnUpload.disabled = false;
     this.el.voiceSelect.disabled = !this.isWorkerReady;
     this.el.langSelect.disabled = !this.isWorkerReady;
     this.el.voiceGallery.classList.toggle("is-disabled", !this.isWorkerReady);
