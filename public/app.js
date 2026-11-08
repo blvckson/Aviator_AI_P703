@@ -97,7 +97,7 @@ function speakText(text) {
   if (!plainText) return false;
   stopNarrator();
   // Prefer sentence boundaries and short breath-sized groups for composed narration.
-  const sentences = plainText.match(/[^.!?]+[.!?]+["')\\]]*|[^.!?]+$/g) || [plainText];
+  const sentences = plainText.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [plainText];
   const cleanChunks = [];
   let current = "";
   for (const sentence of sentences) {
