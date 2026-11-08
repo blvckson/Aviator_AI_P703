@@ -380,6 +380,12 @@ class PocketVoice {
         this.el.btnUpload.disabled = false;
         this.setCloneStatus("", "");
         this.resetUI();
+        if (this.pendingVoiceUpload) {
+          const pending = this.pendingVoiceUpload;
+          this.pendingVoiceUpload = null;
+          this.setCloneStatus(`Model ready — encoding ${pending.name}…`, "");
+          this.processVoiceClip(pending);
+        }
         break;
 
       case "audio_chunk":
