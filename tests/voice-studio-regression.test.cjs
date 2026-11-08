@@ -22,7 +22,6 @@ test("voice studio exposes microphone recording and audio file upload", () => {
   assert.match(voiceApp, /handleFileUpload/);
   assert.match(voiceApp, /pendingVoiceUpload/);
   assert.match(voiceApp, /Model ready — encoding/);
-  assert.match(voiceApp, /Model ready — encoding/);
   assert.match(voiceApp, /processVoiceClip/);
 });
 
