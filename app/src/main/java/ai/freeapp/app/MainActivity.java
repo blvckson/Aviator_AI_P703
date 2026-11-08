@@ -36,7 +36,8 @@ public class MainActivity extends Activity {
         settings.setDomStorageEnabled(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setAllowFileAccess(false);
-        // WebView needs content URI access for user-selected audio files in the voice-clone picker.\n        settings.setAllowContentAccess(true);
+        // WebView needs content URI access for user-selected audio files in the voice-clone picker.
+        settings.setAllowContentAccess(true);
         settings.setAllowFileAccessFromFileURLs(false);
         settings.setAllowUniversalAccessFromFileURLs(false);
 
