@@ -8,11 +8,15 @@ const chatHtml = fs.readFileSync("public/index.html", "utf8");
 const voiceHtml = fs.readFileSync("public/voice/index.html", "utf8");
 const worker = fs.readFileSync("public/voice/inference-worker.js", "utf8");
 const workflow = fs.readFileSync(".github/workflows/build-apk.yml", "utf8");
+const nativeActivity = fs.readFileSync("app/src/main/java/ai/freeapp/app/MainActivity.java", "utf8");
 
 test("built-in narrator uses a 0.30x–1.50x range, sentence-aware pacing, stop and both playback engines", () => {
   assert.match(chatApp, /DEFAULT_NARRATOR_RATE\s*=\s*0\.90/);
   assert.match(chatApp, /utterance\.rate\s*=\s*getNarratorRate\(\)/);
-  assert.match(chatApp, /const chunks = plainText\.match/);
+  assert.match(chatApp, /splitNarratorChunks\(plainText\)/);
+  assert.match(chatApp, /setTimeout\(speakNextChunk, 140\)/);
+  assert.match(chatApp, /Math\.max\(0\.3, value\)/);
+  assert.match(nativeActivity, /Math\.max\(0\.30f, Math\.min\(1\.50f, rate\)\)/);
   assert.match(chatApp, /speechQueue = cleanChunks/);
   assert.match(chatApp, /window\.AskMeNativeTTS\.speakChunk/);
   assert.match(chatApp, /window\.speechSynthesis\.speak/);
