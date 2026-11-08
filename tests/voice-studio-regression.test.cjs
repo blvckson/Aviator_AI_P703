@@ -22,7 +22,7 @@ test("built-in narrator uses a 0.30x–1.50x range, sentence-aware pacing, stop 
   assert.match(chatApp, /window\.speechSynthesis\.speak/);
   assert.match(chatApp, /window\.speechSynthesis\.cancel/);
   assert.match(chatApp, /askme_narrator_auto_read/);
-  assert.match(chatHtml, /id="narrator-speed"[^>]*min="0\.70"[^>]*max="1\.50"[^>]*value="0\.90"/);
+  assert.match(chatHtml, /id="narrator-speed"[^>]*min="0\.30"[^>]*max="1\.50"[^>]*value="0\.90"/);
   assert.match(chatHtml, /id="narrator-auto-read"/);
 });
 
@@ -42,10 +42,10 @@ test("voice studio exposes microphone recording and audio file upload", () => {
   assert.match(voiceApp, /handleFileUpload/);
   assert.match(voiceApp, /pendingVoiceFile = file/);
   assert.match(voiceApp, /It will be encoded as soon as the voice model finishes loading/);
-  assert.match(voiceApp, /this\\.el\\.btnUpload\\.disabled = false/);
+  assert.match(voiceApp, /this\.el\.btnUpload\.disabled = false/);
   assert.match(voiceApp, /processVoiceClip/);
-  assert.match(nativeActivity, /setAllowContentAccess\\(true\\)/);
-  assert.match(nativeActivity, /Intent\\.ACTION_OPEN_DOCUMENT/);
+  assert.match(nativeActivity, /setAllowContentAccess\(true\)/);
+  assert.match(nativeActivity, /Intent\.ACTION_OPEN_DOCUMENT/);
 });
 
 test("voice clone requests are encoded locally by the ONNX worker", () => {
