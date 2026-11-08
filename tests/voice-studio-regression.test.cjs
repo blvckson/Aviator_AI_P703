@@ -7,7 +7,7 @@ const chatApp = fs.readFileSync("public/app.js", "utf8");
 const chatHtml = fs.readFileSync("public/index.html", "utf8");
 const voiceHtml = fs.readFileSync("public/voice/index.html", "utf8");
 const worker = fs.readFileSync("public/voice/inference-worker.js", "utf8");
-const workflow = fs.readFileSync(".github/workflows/build-apk.yml", "utf8");\nconst nativeActivity = fs.readFileSync("app/src/main/java/ai/freeapp/app/MainActivity.java", "utf8");
+const workflow = fs.readFileSync(".github/workflows/build-apk.yml", "utf8");
 const nativeActivity = fs.readFileSync("app/src/main/java/ai/freeapp/app/MainActivity.java", "utf8");
 
 test("built-in narrator uses a 0.30x–1.50x range, sentence-aware pacing, stop and both playback engines", () => {
@@ -39,8 +39,13 @@ test("voice studio exposes microphone recording and audio file upload", () => {
   assert.ok(voiceHtml.includes("accept=\"audio/*\""));
   assert.match(voiceApp, /new MediaRecorder/);
   assert.match(voiceApp, /getUserMedia/);
-  assert.match(voiceApp, /handleFileUpload/);\n  assert.match(voiceApp, /pendingVoiceFile = file/);\n  assert.match(voiceApp, /It will be encoded as soon as the voice model finishes loading/);\n  assert.match(voiceApp, /this\\.el\\.btnUpload\\.disabled = false/);
-  assert.match(voiceApp, /processVoiceClip/);\n  assert.match(nativeActivity, /setAllowContentAccess\\(true\\)/);\n  assert.match(nativeActivity, /Intent\\.ACTION_OPEN_DOCUMENT/);
+  assert.match(voiceApp, /handleFileUpload/);
+  assert.match(voiceApp, /pendingVoiceFile = file/);
+  assert.match(voiceApp, /It will be encoded as soon as the voice model finishes loading/);
+  assert.match(voiceApp, /this\\.el\\.btnUpload\\.disabled = false/);
+  assert.match(voiceApp, /processVoiceClip/);
+  assert.match(nativeActivity, /setAllowContentAccess\\(true\\)/);
+  assert.match(nativeActivity, /Intent\\.ACTION_OPEN_DOCUMENT/);
 });
 
 test("voice clone requests are encoded locally by the ONNX worker", () => {
