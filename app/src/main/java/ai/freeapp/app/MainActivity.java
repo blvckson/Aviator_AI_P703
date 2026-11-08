@@ -36,7 +36,7 @@ public class MainActivity extends Activity {
         settings.setDomStorageEnabled(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setAllowFileAccess(false);
-        settings.setAllowContentAccess(false);
+        // WebView needs content URI access for user-selected audio files in the voice-clone picker.\n        settings.setAllowContentAccess(true);
         settings.setAllowFileAccessFromFileURLs(false);
         settings.setAllowUniversalAccessFromFileURLs(false);
 
@@ -72,8 +72,8 @@ public class MainActivity extends Activity {
                 }
                 filePathCallback = callback;
 
-                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);\n                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                 String[] acceptedTypes = fileChooserParams.getAcceptTypes();
                 if (acceptedTypes == null || acceptedTypes.length == 0) {
                     intent.setType("*/*");
