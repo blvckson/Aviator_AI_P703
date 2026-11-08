@@ -49,7 +49,7 @@ function savePreference(key, value) {
 }
 function getNarratorRate() {
   const value = Number(narratorSpeed && narratorSpeed.value);
-  return Number.isFinite(value) ? Math.min(1.5, Math.max(0.7, value)) : DEFAULT_NARRATOR_RATE;
+  return Number.isFinite(value) ? Math.min(1.5, Math.max(0.3, value)) : DEFAULT_NARRATOR_RATE;
 }
 function updateNarratorRateLabel() {
   if (narratorSpeedValue) narratorSpeedValue.textContent = getNarratorRate().toFixed(2) + "×";
@@ -69,6 +69,38 @@ function getPreferredVoice() {
     voices.find(v => /^en-GB/i.test(v.lang)) ||
     voices.find(v => /^en-/i.test(v.lang)) || null;
 }
+function splitNarratorChunks(text, maxLength = 480) {
+  const sentences = String(text || "").match(/[^.!?…]+(?:[.!?…]+["'”’)]*|$)/gu) || [String(text || "")];
+  const chunks = [];
+  let current = "";
+  for (const rawSentence of sentences) {
+    const sentence = rawSentence.trim();
+    if (!sentence) continue;
+    if (sentence.length > maxLength) {
+      if (current) { chunks.push(current); current = ""; }
+      const words = sentence.split(/\s+/);
+      let part = "";
+      for (const word of words) {
+        if (part && (part + " " + word).length > maxLength) {
+          chunks.push(part);
+          part = word;
+        } else {
+          part = part ? part + " " + word : word;
+        }
+      }
+      if (part) current = part;
+      continue;
+    }
+    if (current && (current + " " + sentence).length > maxLength) {
+      chunks.push(current);
+      current = sentence;
+    } else {
+      current = current ? current + " " + sentence : sentence;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
 function speakNextChunk() {
   if (!speechQueue.length) {
     speaking = false;
@@ -83,7 +115,7 @@ function speakNextChunk() {
   utterance.volume = 1;
   const voice = getPreferredVoice();
   if (voice) utterance.voice = voice;
-  utterance.onend = speakNextChunk;
+  utterance.onend = () => { setTimeout(speakNextChunk, 140); };
   utterance.onerror = () => {
     speaking = false;
     speechQueue = [];
