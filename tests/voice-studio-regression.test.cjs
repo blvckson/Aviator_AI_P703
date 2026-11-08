@@ -22,6 +22,7 @@ test("voice studio exposes microphone recording and audio file upload", () => {
   assert.match(voiceApp, /handleFileUpload/);
   assert.match(voiceApp, /pendingVoiceUpload/);
   assert.match(voiceApp, /Model ready — encoding/);
+  assert.match(voiceApp, /Model ready — encoding/);
   assert.match(voiceApp, /processVoiceClip/);
 });
 
@@ -52,9 +53,9 @@ test("custom voices are stored and restored using IndexedDB", () => {
 
 test("voice studio speed defaults to 0.90x, supports 0.30x-1.50x and persists safely", () => {
   assert.match(voiceApp, /this\.playbackSpeed = 0\.90/);
-  assert.match(voiceHtml, /id="narrator-speed"[^>]*min="0\.70"[^>]*max="1\.50"[^>]*value="0\.90"/);
+  assert.match(voiceHtml, /id="narrator-speed"[^>]*min="0\.30"[^>]*max="1\.50"[^>]*value="0\.90"/);
   assert.match(voiceApp, /askme_voice_studio_playback_speed/);
-  assert.match(voiceApp, /Math\.min\(1\.50, Math\.max\(0\.70/);
+  assert.match(voiceApp, /Math\.min\(1\.50, Math\.max\(0\.30/);
   assert.match(voiceApp, /this\.player\.playAudio\(this\.applyPlaybackSpeed\(pcm\)\)/);
 });
 
