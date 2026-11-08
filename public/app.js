@@ -49,7 +49,7 @@ function savePreference(key, value) {
 }
 function getNarratorRate() {
   const value = Number(narratorSpeed && narratorSpeed.value);
-  return Number.isFinite(value) ? Math.min(1.5, Math.max(0.7, value)) : DEFAULT_NARRATOR_RATE;
+  return Number.isFinite(value) ? Math.min(1.5, Math.max(0.3, value)) : DEFAULT_NARRATOR_RATE;
 }
 function updateNarratorRateLabel() {
   if (narratorSpeedValue) narratorSpeedValue.textContent = getNarratorRate().toFixed(2) + "×";
@@ -79,7 +79,7 @@ function speakNextChunk() {
   const text = speechQueue.shift();
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.rate = getNarratorRate();
-  utterance.pitch = 0.98;
+  utterance.pitch = 0.96;
   utterance.volume = 1;
   const voice = getPreferredVoice();
   if (voice) utterance.voice = voice;
