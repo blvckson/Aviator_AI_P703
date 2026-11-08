@@ -96,8 +96,20 @@ function speakText(text) {
   const plainText = String(text || "").replace(/\s+/g, " ").trim();
   if (!plainText) return false;
   stopNarrator();
-  const chunks = plainText.match(/[\s\S]{1,1800}(?:\s|$)/g) || [plainText];
-  const cleanChunks = chunks.map(chunk => chunk.trim()).filter(Boolean);
+  // Prefer sentence boundaries and short breath-sized groups for composed narration.
+  const sentences = plainText.match(/[^.!?]+[.!?]+["')\\]]*|[^.!?]+$/g) || [plainText];
+  const cleanChunks = [];
+  let current = "";
+  for (const sentence of sentences) {
+    const part = sentence.trim();
+    if (!part) continue;
+    if (current && current.length + part.length + 1 > 420) {
+      cleanChunks.push(current.trim());
+      current = "";
+    }
+    current += (current ? " " : "") + part;
+  }
+  if (current.trim()) cleanChunks.push(current.trim());
   if (window.AskMeNativeTTS && typeof window.AskMeNativeTTS.speakChunk === "function" &&
       typeof window.AskMeNativeTTS.isReady === "function" && window.AskMeNativeTTS.isReady()) {
     const rate = getNarratorRate();
