@@ -38,6 +38,7 @@ class PocketVoice {
     this.audioContext = null;
     this.isGenerating = false;
     this.isWorkerReady = false;
+    this.pendingVoiceFile = null;
 
     // Voice cloning
     this.mediaRecorder = null;
@@ -260,7 +261,7 @@ class PocketVoice {
     this.updateStatus("Initializing…", "loading");
     this.el.btnGenerate.disabled = true;
     this.el.btnRecord.disabled = true;
-    this.el.btnUpload.disabled = true;
+    this.el.btnUpload.disabled = false;
     this.el.voiceSelect.disabled = true;
     this.el.langSelect.disabled = true;
     this.el.voiceGallery.classList.add("is-disabled");
@@ -870,7 +871,7 @@ class PocketVoice {
     this.el.btnGenerate.classList.remove("is-loading");
     this.el.btnStop.style.display = "none";
     this.el.btnRecord.disabled = !this.isWorkerReady;
-    this.el.btnUpload.disabled = !this.isWorkerReady;
+    this.el.btnUpload.disabled = false;
     this.el.voiceSelect.disabled = !this.isWorkerReady;
     this.el.langSelect.disabled = !this.isWorkerReady;
     this.el.voiceGallery.classList.toggle("is-disabled", !this.isWorkerReady);
