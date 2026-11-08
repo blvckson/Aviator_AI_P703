@@ -143,7 +143,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean speakChunk(String text, float rate, boolean append) {
             if (!ttsReady || textToSpeech == null || text == null || text.isEmpty()) return false;
-            float safeRate = Math.max(0.70f, Math.min(1.50f, rate));
+            float safeRate = Math.max(0.30f, Math.min(1.50f, rate));
             textToSpeech.setSpeechRate(safeRate);
             int queueMode = append ? TextToSpeech.QUEUE_ADD : TextToSpeech.QUEUE_FLUSH;
             return textToSpeech.speak(text, queueMode, new Bundle(), "askme-" + System.nanoTime()) == TextToSpeech.SUCCESS;
