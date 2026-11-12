@@ -3,7 +3,7 @@
 const byId = (id) => document.getElementById(id);
 const promptBox = byId("prompt");
 const imageInput = byId("image-input");
-const fileInput = byId("file-input");
+const fileInput = byId("file-input");\nconst videoInput = byId("video-input");\nconst videoFileStatus = byId("video-file-status");
 const docFileStatus = byId("doc-file-status");
 const fileStatus = byId("file-status");
 const preview = byId("preview");
@@ -26,13 +26,13 @@ const voiceCloneClose = byId("narrator-close");
 const API_BASE = "https://freeapp-ai.lovesongmelodies.workers.dev";
 const MAX_IMAGES = 4;
 const MAX_DOC_FILES = 5;
-const MAX_DOC_BYTES = 100000;
+const MAX_DOC_BYTES = 12 * 1024 * 1024;
 const MAX_DOC_CHARS = 12000;
 const MAX_PROMPT_CHARS = 24000;
 const REQUEST_TIMEOUT_MS = 120000;
 const DEFAULT_NARRATOR_RATE = 0.90;
 let selectedImages = [];
-let selectedDocs = [];
+let selectedDocs = [];\nlet selectedVideos = [];
 let lastAnswer = "";
 let speechQueue = [];
 let speaking = false;
@@ -196,7 +196,7 @@ if (imageInput) imageInput.addEventListener("change", () => {
 });
 if (fileInput) fileInput.addEventListener("change", () => {
   selectedDocs = Array.from(fileInput.files || [])
-    .filter(file => /\\.(txt|md|csv|json|py|js|kt|java|html|css|xml|log)$/i.test(file.name))
+    .filter(file => /\\.(txt|md|csv|json|py|js|kt|java|html|css|xml|log|pdf|docx)$/i.test(file.name))
     .filter(file => file.size <= MAX_DOC_BYTES)
     .slice(0, MAX_DOC_FILES);
   if (docFileStatus) {
@@ -206,7 +206,7 @@ if (fileInput) fileInput.addEventListener("change", () => {
       : "No supported documents selected";
   }
 });
-if (buildButton) buildButton.addEventListener("click", askAI);
+if (videoInput) videoInput.addEventListener("change", () => {\n  selectedVideos = Array.from(videoInput.files || []).filter(file => file.type.startsWith("video/")).slice(0, 2);\n  if (videoFileStatus) videoFileStatus.textContent = selectedVideos.length ? selectedVideos.length + " video(s) selected (maximum 2)" : "No video selected";\n});\nif (buildButton) buildButton.addEventListener("click", askAI);
 
 function buildQualityPrompt(userPrompt) {
   const rules = [];
@@ -232,7 +232,7 @@ function buildQualityPrompt(userPrompt) {
 
 async function askAI() {
   const prompt = String(promptBox && promptBox.value || "").trim();
-  if (!prompt && !selectedImages.length && !selectedDocs.length) {
+  if (!prompt && !selectedImages.length && !selectedDocs.length && !selectedVideos.length) {
     statusBox.textContent = "Enter a question or attach an image first.";
     return;
   }
@@ -249,7 +249,7 @@ async function askAI() {
   if (sourceList) sourceList.replaceChildren();
   if (sourcesBox) sourcesBox.hidden = true;
 
-  const userBubble = appendChatMessage("user", prompt || (selectedImages.length ? "Please analyze the attached image(s)." : "Please review the attached files."));\n  const assistantBubble = appendChatMessage("assistant", "Thinking…");\n  const greeting = /^(hi|hlo|hello|hey|good morning|good afternoon|good evening|how are you)[!.\\s]*$/i.test(prompt);\n  if (greeting) {\n    const greetingAnswer = "Hello! How can I help you today?";\n    lastAnswer = greetingAnswer; resultBox.textContent = greetingAnswer;\n    assistantBubble.textContent = greetingAnswer; statusBox.textContent = "Done.";\n    if (narratorButton) narratorButton.disabled = false;\n    buildButton.disabled = false; return;\n  }\n  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const userBubble = appendChatMessage("user", prompt || "Please analyze the attached media and files.");\n  const assistantBubble = appendChatMessage("assistant", "Thinking…");\n  const greeting = /^(hi|hlo|hello|hey|good morning|good afternoon|good evening|how are you)[!.\\s]*$/i.test(prompt);\n  if (greeting) {\n    const greetingAnswer = "Hello! How can I help you today?";\n    lastAnswer = greetingAnswer; resultBox.textContent = greetingAnswer;\n    assistantBubble.textContent = greetingAnswer; statusBox.textContent = "Done.";\n    if (narratorButton) narratorButton.disabled = false;\n    buildButton.disabled = false; return;\n  }\n  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
   const timeoutId = controller ? setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS) : null;
   try {
     const images = [];
@@ -346,7 +346,7 @@ function toText(file) {
     reader.readAsText(file);
   });
 }
-function toDataUrl(file) {
+function extractVideoFrames(file) {\n  return new Promise((resolve, reject) => {\n    const url = URL.createObjectURL(file); const video = document.createElement("video");\n    video.preload = "metadata"; video.muted = true; video.playsInline = true; video.src = url;\n    const cleanup = () => { URL.revokeObjectURL(url); video.removeAttribute("src"); video.load(); };\n    video.onerror = () => { cleanup(); reject(new Error("Could not open video " + file.name)); };\n    video.onloadedmetadata = async () => {\n      try {\n        if (!Number.isFinite(video.duration) || video.duration <= 0 || video.duration > 60) throw new Error("Video must be 60 seconds or shorter: " + file.name);\n        const canvas = document.createElement("canvas"); const scale = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));\n        canvas.width = Math.max(1, Math.round(video.videoWidth * scale)); canvas.height = Math.max(1, Math.round(video.videoHeight * scale));\n        const ctx = canvas.getContext("2d"); const frames = [];\n        for (const time of [0, video.duration * .25, video.duration * .5, video.duration * .75, Math.max(0, video.duration - .1)]) {\n          await new Promise((ok, fail) => { video.onseeked = ok; video.onerror = fail; video.currentTime = Math.min(time, Math.max(0, video.duration - .05)); });\n          ctx.drawImage(video, 0, 0, canvas.width, canvas.height); frames.push(canvas.toDataURL("image/jpeg", .78));\n        }\n        cleanup(); resolve(frames);\n      } catch (error) { cleanup(); reject(error); }\n    };\n  });\n}\nfunction toDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
