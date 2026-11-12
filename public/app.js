@@ -296,7 +296,8 @@ async function askAI() {
     const images = [];
     for (const file of selectedImages) images.push(await toDataUrl(file));
     for (const file of selectedVideos) images.push(...await extractVideoFrames(file));
-    const ocrText = await extractLocalOcr(selectedImages);\n    const documentParts = [];
+    const ocrText = await extractLocalOcr(selectedImages);
+    const documentParts = [];
     for (const file of selectedDocs) {
       const content = await toText(file);
       documentParts.push("--- ATTACHED FILE: " + file.name + " ---\n" + content);
