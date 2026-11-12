@@ -140,7 +140,7 @@ public class MainActivity extends Activity {
         setContentView(web);
     }
 
-    private final class NativeNarrator {
+    public final class NativeNarrator {
         @JavascriptInterface
         public boolean speakChunk(String text, float rate, boolean append) {
             if (!ttsReady || textToSpeech == null || text == null || text.isEmpty()) return false;
