@@ -21,7 +21,8 @@
       </div>
       </header>
     <section class="card">
-      <section id="chat-messages" class="chat-messages" aria-label="Conversation" aria-live="polite"><div class="chat-empty">Your conversation will appear here.</div></section>\n      <label for="prompt">Ask Ask.Me AI anything</label>
+      <section id="chat-messages" class="chat-messages" aria-label="Conversation" aria-live="polite"><div class="chat-empty">Your conversation will appear here.</div></section>
+      <label for="prompt">Ask Ask.Me AI anything</label>
       <textarea id="prompt" rows="8" placeholder="Ask a complex question or attach a screenshot..."></textarea>
       <div class="controls">
         <label class="file-button">
@@ -33,7 +34,11 @@
           📎 Add documents/code
           <input id="file-input" type="file" accept=".txt,.md,.csv,.json,.py,.js,.kt,.java,.html,.css,.xml,.log,.pdf,.docx" multiple hidden>
         </label>
-        <span id="doc-file-status">No documents selected</span>\n        <label class="file-button">🎬 Add video\n          <input id="video-input" type="file" accept="video/*" multiple hidden>\n        </label>\n        <span id="video-file-status">No video selected</span>
+        <span id="doc-file-status">No documents selected</span>
+        <label class="file-button">🎬 Add video
+          <input id="video-input" type="file" accept="video/*" multiple hidden>
+        </label>
+        <span id="video-file-status">No video selected</span>
       </div>
       <div id="preview"></div>
       <button id="build-button" type="button">Ask Ask.Me AI</button>
@@ -90,7 +95,9 @@
     </div>
   </div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>\n  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.9.0/mammoth.browser.min.js"></script>\n  <script src="app.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.9.0/mammoth.browser.min.js"></script>
+  <script src="app.js"></script>
   <script src="coding-agent-guard.js"></script>
   <script src="github-agent.js"></script>
 </body>
