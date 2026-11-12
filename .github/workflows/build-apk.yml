@@ -20,6 +20,7 @@ jobs:
       - name: Validate frontend syntax and regression tests
         run: |
           node --check public/app.js
+          node --check public/app-builder.js
           node --check public/github-agent.js
           node --check public/coding-agent-guard.js
           node --check public/voice/app.js
