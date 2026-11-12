@@ -282,7 +282,7 @@ async function askAI() {
 
   const userBubble = appendChatMessage("user", prompt || "Please analyze the attached media and files.");
   const assistantBubble = appendChatMessage("assistant", "Thinking…");
-  const greeting = /^(hi|hlo|hello|hey|good morning|good afternoon|good evening|how are you)[!.,\s]*$/i.test(prompt);
+  const greeting = !selectedImages.length && !selectedDocs.length && !selectedVideos.length && /^(hi|hlo|hello|hey|good morning|good afternoon|good evening|how are you)[!.,\s]*$/i.test(prompt);
   if (greeting) {
     const greetingAnswer = "Hello! How can I help you today?";
     lastAnswer = greetingAnswer; resultBox.textContent = greetingAnswer;
