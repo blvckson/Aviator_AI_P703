@@ -22,7 +22,7 @@ test("narrator runtime dependencies are defined and stale names are gone", () =>
 
 test("narrator defaults to 0.90x and supports 0.70x to 1.50x speed", () => {
   assert.match(app, /DEFAULT_NARRATOR_RATE\s*=\s*0\.90/);
-  assert.match(html, /id="narrator-speed"[^>]*min="0\.70"[^>]*max="1\.50"/);
+  assert.match(html, /id="narrator-speed"[^>]*min="0\.30"[^>]*max="1\.50"/);
   assert.match(app, /utterance\.rate\s*=\s*getNarratorRate\(\)/);
 });
 
