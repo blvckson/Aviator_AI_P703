@@ -44,3 +44,6 @@ button:disabled { opacity: .6; cursor: wait; }
 .attach-button:active { transform:scale(.96); }
 .file-status { font-size:13px; color:#60656b; }
 #preview { display:flex; flex-wrap:wrap; gap:6px; }
+
+.narrator-toggle { display:flex; align-items:center; gap:8px; margin-top:12px; font-weight:normal; font-size:14px; }
+.narrator-toggle input { width:18px; height:18px; margin:0; }
