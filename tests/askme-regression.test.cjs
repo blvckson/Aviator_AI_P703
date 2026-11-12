@@ -99,3 +99,28 @@ test("image-only prompts are converted into a valid non-empty API request", () =
   assert.match(app, /Please analyze the attached image/);
   assert.match(app, /images\.length \?/);
 });
+
+
+test("conversation greeting is handled without invoking research and messages render as chat bubbles", () => {
+  assert.match(html, /id="chat-messages"/);
+  assert.match(app, /function appendChatMessage/);
+  assert.match(app, /const greeting =/);
+  assert.match(app, /if \(greeting\)/);
+});
+
+test("PDF, DOCX, and video attachments have extraction paths", () => {
+  assert.match(html, /\.pdf/);
+  assert.match(html, /\.docx/);
+  assert.match(html, /id="video-input"/);
+  assert.match(app, /pdfjsLib\.getDocument/);
+  assert.match(app, /mammoth\.extractRawText/);
+  assert.match(app, /function extractVideoFrames/);
+  assert.match(app, /video\.duration > 60/);
+});
+
+test("native narrator waits for Android TTS initialization and supports 0.30x speed", () => {
+  assert.match(app, /async function waitForNativeNarrator/);
+  assert.match(app, /Math\.max\(0\.3, value\)/);
+  assert.match(activity, /Math\.max\(0\.30f/);
+  assert.match(html, /min="0\.30" max="1\.50"/);
+});
