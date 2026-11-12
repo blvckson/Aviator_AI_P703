@@ -74,7 +74,8 @@ public class MainActivity extends Activity {
                 filePathCallback = callback;
 
                 Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                intent.addCategory(Intent.CATEGORY_OPENABLE);\n                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                 String[] acceptedTypes = fileChooserParams.getAcceptTypes();
                 if (acceptedTypes == null || acceptedTypes.length == 0) {
                     intent.setType("*/*");
