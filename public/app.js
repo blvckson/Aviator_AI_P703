@@ -131,14 +131,6 @@ function speakNextChunk() {
 async function waitForNativeNarrator(timeoutMs = 8000) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
-    try { if (window.AskMeNativeTTS && window.AskMeNativeTTS.isReady()) return true; } catch (_) { /* bridge may still be initializing */ }
-    await new Promise(resolve => setTimeout(resolve, 200));
-  }
-  return false;
-}
-async function waitForNativeNarrator(timeoutMs = 8000) {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
     try {
       if (window.AskMeNativeTTS && typeof window.AskMeNativeTTS.isReady === "function" && window.AskMeNativeTTS.isReady()) return true;
     } catch (_) { /* Native bridge may still be initializing. */ }
