@@ -3,50 +3,51 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Aviator AI</title>
+  <meta name="theme-color" content="#111827">
+  <title>Ask.Me</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="container">
-    <header>
-      <div class="header-row">
-        <div>
-          <h1>Aviator AI</h1>
-          <p>Deep reasoning, live research, screenshots, images and videos.</p>
-        </div>
-        <button id="narrator-settings-button" class="icon-button" type="button" aria-label="Narrator settings">🎙 Voice Clone</button>
-      </div>
-      </header>
+    <header class="header-row">
+      <div><h1>Ask.Me</h1><p>Deep reasoning, live research, images, videos and documents.</p></div>
+      <button id="voice-studio-button" class="icon-button" type="button">🎙 Voice Clone</button>
+    </header>
     <section class="card">
-      <label for="prompt">Ask Aviator AI anything</label>
-      <textarea id="prompt" rows="8" placeholder="Ask a complex question or attach a screenshot..."></textarea>
+      <label for="prompt">What would you like to ask?</label>
+      <textarea id="prompt" rows="7" placeholder="Ask anything, or attach images, videos or documents..."></textarea>
       <div class="chat-attachments">
-        <button id="attach-button" class="attach-button" type="button" aria-label="Attach image or document" title="Attach image or document">＋</button>
-        <input id="image-input" type="file" accept="image/*" multiple hidden>
-        <span id="file-status" class="file-status">Attach an image or document</span>
+        <button id="attach-button" class="attach-button" type="button" aria-label="Attach files">＋</button>
+        <input id="file-input" type="file" accept="image/*,video/*,.pdf,.txt,.md,.csv,.docx,application/pdf,text/plain,text/markdown,text/csv,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple hidden>
+        <span id="file-status" class="file-status">Attach images, videos, PDF, DOCX or text files</span>
       </div>
-      <div id="preview"></div>
-      <button id="build-button" type="button">Ask Aviator AI</button>
+      <div id="preview" class="preview"></div>
+      <section class="narrator-panel" aria-labelledby="narrator-heading">
+        <div class="narrator-head"><strong id="narrator-heading">Answer narrator</strong><label class="toggle-label"><input id="narrator-enabled" type="checkbox"> Read answers aloud</label></div>
+        <label for="narrator-speed">Voice speed: <output id="narrator-speed-value">0.90×</output></label>
+        <input id="narrator-speed" type="range" min="0.30" max="1.50" step="0.05" value="0.90">
+        <div class="range-labels"><span>0.30× slower</span><span>1.50× faster</span></div>
+        <button id="narrator-stop" class="secondary-button" type="button">Stop narration</button>
+        <div id="narrator-status" class="small" aria-live="polite"></div>
+      </section>
+      <button id="build-button" type="button">Ask</button>
       <div id="status" class="status" aria-live="polite"></div>
       <div id="result" aria-live="polite"></div>
       <div id="media"></div>
-      <div id="sources" class="sources" hidden>
-        <strong>Web sources used</strong>
-        <ul id="source-list"></ul>
-      </div>
+      <div id="sources" class="sources" hidden><strong>Web sources used</strong><ul id="source-list"></ul></div>
     </section>
   </main>
-
-  <div id="narrator-modal" class="modal" hidden>
-    <div class="modal-card voice-modal-card" role="dialog" aria-modal="true" aria-labelledby="narrator-title">
-      <button id="narrator-close" class="modal-close" type="button" aria-label="Close">×</button>
-      <h2 id="narrator-title">Aviator AI Voice Clone</h2>
-      <p>Your voice-cloning studio runs locally inside the Aviator AI app. Voice samples are processed on this device; no commercial voice-cloning API is used.</p>
-      <iframe id="voice-studio-frame" title="Aviator AI local voice cloning studio" src="voice/index.html"></iframe>
+  <div id="voice-modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="voice-title">
+      <button id="voice-close" class="modal-close" type="button" aria-label="Close">×</button>
+      <h2 id="voice-title">Ask.Me Voice Clone Studio</h2>
+      <p>Record or upload a voice sample, save a voice, and generate speech. This studio is separate from answer narration.</p>
+      <iframe id="voice-studio-frame" title="Ask.Me voice cloning studio" src="voice/index.html"></iframe>
     </div>
   </div>
-
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.9.0/mammoth.browser.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
