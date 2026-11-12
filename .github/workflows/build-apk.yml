@@ -1,4 +1,4 @@
-name: Build Aviator AI APK
+name: Build Ask.Me APK
 
 on:
   pull_request:
@@ -83,18 +83,18 @@ jobs:
           APK="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           mkdir -p app/build/outputs/formats
-          cp "$APK" app/build/outputs/formats/Aviator_AI_P703_Format_A.apk
-          cp "$APK" app/build/outputs/formats/Aviator_AI_P703_Format_B.apk
+          cp "$APK" app/build/outputs/formats/AskMe_P703_Format_A.apk
+          cp "$APK" app/build/outputs/formats/AskMe_P703_Format_B.apk
           ls -lh app/build/outputs/formats/*.apk
 
       - name: Upload APK A
         uses: actions/upload-artifact@v4
         with:
-          name: Aviator_AI_P703_Format_A
-          path: app/build/outputs/formats/Aviator_AI_P703_Format_A.apk
+          name: AskMe_P703_Format_A
+          path: app/build/outputs/formats/AskMe_P703_Format_A.apk
 
       - name: Upload APK B
         uses: actions/upload-artifact@v4
         with:
-          name: Aviator_AI_P703_Format_B
-          path: app/build/outputs/formats/Aviator_AI_P703_Format_B.apk
+          name: AskMe_P703_Format_B
+          path: app/build/outputs/formats/AskMe_P703_Format_B.apk
