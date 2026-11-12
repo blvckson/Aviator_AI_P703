@@ -8,6 +8,26 @@ const statusBox = document.getElementById("status");
 const sourcesBox = document.getElementById("sources");
 const sourceList = document.getElementById("source-list");
 const buildButton = document.getElementById("build-button");
+const narratorToggle = document.getElementById("narrator-enabled");
+let narratorEnabled = localStorage.getItem("askme_narrator_enabled") === "true";
+if (narratorToggle) {
+  narratorToggle.checked = narratorEnabled;
+  narratorToggle.addEventListener("change", () => {
+    narratorEnabled = narratorToggle.checked;
+    localStorage.setItem("askme_narrator_enabled", String(narratorEnabled));
+    if (!narratorEnabled && "speechSynthesis" in window) window.speechSynthesis.cancel();
+  });
+}
+
+function readAnswerAloud(text) {
+  if (!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance === "undefined") {
+    throw new Error("Speech synthesis is not supported by this browser.");
+  }
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 0.9;
+  window.speechSynthesis.speak(utterance);
+}
 
 let selectedImages = [];
 
@@ -61,7 +81,7 @@ async function askAI() {
     if (selfModify) {
       let ownerKey = localStorage.getItem("freeapp_ai_owner_key") || "";
       if (!ownerKey) {
-        ownerKey = window.prompt("Enter your Aviator AI owner key:");
+        ownerKey = window.prompt("Enter your Ask.Me owner key:");
         if (ownerKey) localStorage.setItem("freeapp_ai_owner_key", ownerKey);
       }
       if (!ownerKey) throw new Error("Owner key is required for self-modification.");
@@ -111,10 +131,17 @@ async function askAI() {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "The AI service returned an error.");
 
-    resultBox.textContent = data.result || "No response was returned.";
-    if (narratorDefaults.auto || narratorDefaults.enabled) {
-      if (narratorVoiceId) await playServerNarration(data.result || "No response was returned.");
-      else speakText(data.result || "No response was returned.");
+    const answerText = data.result || "No response was returned.";
+    resultBox.textContent = answerText;
+
+    // Speech is optional and isolated: narrator failures must never discard an AI answer.
+    if (narratorEnabled && answerText) {
+      try {
+        readAnswerAloud(answerText);
+      } catch (narratorError) {
+        console.warn("Ask.Me narrator unavailable:", narratorError);
+        statusBox.textContent = "Answer ready. Narrator is unavailable on this browser.";
+      }
     }
 
     renderMedia(data.media);
