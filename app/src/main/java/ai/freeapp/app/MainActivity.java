@@ -17,7 +17,7 @@ import androidx.webkit.WebViewClientCompat;
 import android.webkit.WebChromeClient;
 import android.webkit.PermissionRequest;
 import android.webkit.JavascriptInterface;
-import android.speech.tts.TextToSpeech;
+import android.speech.tts.TextToSpeech;\nimport android.speech.tts.UtteranceProgressListener;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
@@ -54,7 +54,7 @@ public class MainActivity extends Activity {
                 }
             }
         });
-        web.addJavascriptInterface(new NativeNarrator(), "AskMeNativeTTS");
+        textToSpeech.setOnUtteranceProgressListener(new UtteranceProgressListener() {\n            @Override public void onStart(String utteranceId) { }\n            @Override public void onDone(String utteranceId) {\n                if (utteranceId != null && utteranceId.startsWith("askme-final-")) {\n                    runOnUiThread(() -> web.evaluateJavascript("window.askMeNarrationFinished && window.askMeNarrationFinished()", null));\n                }\n            }\n            @Override public void onError(String utteranceId) {\n                if (utteranceId != null && utteranceId.startsWith("askme-final-")) {\n                    runOnUiThread(() -> web.evaluateJavascript("window.askMeNarrationFinished && window.askMeNarrationFinished()", null));\n                }\n            }\n        });\n        web.addJavascriptInterface(new NativeNarrator(), "AskMeNativeTTS");
 
         web.setWebChromeClient(new WebChromeClient() {
             @Override public void onPermissionRequest(final PermissionRequest request) {
@@ -143,12 +143,12 @@ public class MainActivity extends Activity {
 
     public final class NativeNarrator {
         @JavascriptInterface
-        public boolean speakChunk(String text, float rate, boolean append) {
+        public boolean speakChunk(String text, float rate, boolean append, boolean isLast) {
             if (!ttsReady || textToSpeech == null || text == null || text.isEmpty()) return false;
             float safeRate = Math.max(0.30f, Math.min(1.50f, rate));
             textToSpeech.setSpeechRate(safeRate);
             int queueMode = append ? TextToSpeech.QUEUE_ADD : TextToSpeech.QUEUE_FLUSH;
-            return textToSpeech.speak(text, queueMode, new Bundle(), "askme-" + System.nanoTime()) == TextToSpeech.SUCCESS;
+            return textToSpeech.speak(text, queueMode, new Bundle(), (isLast ? "askme-final-" : "askme-") + System.nanoTime()) == TextToSpeech.SUCCESS;
         }
 
         @JavascriptInterface
