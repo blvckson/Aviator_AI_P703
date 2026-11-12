@@ -19,6 +19,6 @@ test("Ask.Me runs local OCR with confidence and image preprocessing", () => {
 });
 
 test("Ask.Me sends OCR transcript with image attachments", () => {
-  assert.match(app, /ocrText = await extractLocalOcr\(selectedImages\)/);
-  assert.match(app, /JSON\.stringify\(\{ prompt, images, ocrText \}\)/);
+  assert.match(app, /ocrText=await extractLocalOcr(imageFiles)/);
+  assert.match(app, /JSON.stringify({prompt,images,ocrText})/);
 });
