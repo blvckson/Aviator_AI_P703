@@ -99,10 +99,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: AskMe_P703_Format_A
-          path: app/build/outputs/formats/Aviator_AI_P703_Format_A.apk
+          path: app/build/outputs/formats/AskMe_P703_Format_A.apk
 
       - name: Upload APK B
         uses: actions/upload-artifact@v4
         with:
           name: AskMe_P703_Format_B
-          path: app/build/outputs/formats/Aviator_AI_P703_Format_B.apk
+          path: app/build/outputs/formats/AskMe_P703_Format_B.apk
