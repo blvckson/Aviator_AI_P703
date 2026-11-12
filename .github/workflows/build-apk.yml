@@ -22,6 +22,8 @@ jobs:
           node --check public/app.js
           node --check public/github-agent.js
           node --check public/coding-agent-guard.js
+          node --check public/voice/app.js
+          node --check public/voice/inference-worker.js
           node --test tests/*.test.cjs
 
       - name: Set up JDK 17
