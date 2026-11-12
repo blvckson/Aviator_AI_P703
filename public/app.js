@@ -218,7 +218,7 @@ if (imageInput) imageInput.addEventListener("change", () => {
 });
 if (fileInput) fileInput.addEventListener("change", () => {
   selectedDocs = Array.from(fileInput.files || [])
-    .filter(file => /\\.(txt|md|csv|json|py|js|kt|java|html|css|xml|log|pdf|docx)$/i.test(file.name))
+    .filter(file => /\.(txt|md|csv|json|py|js|kt|java|html|css|xml|log|pdf|docx)$/i.test(file.name))
     .filter(file => file.size <= MAX_DOC_BYTES)
     .slice(0, MAX_DOC_FILES);
   if (docFileStatus) {
@@ -277,7 +277,7 @@ async function askAI() {
 
   const userBubble = appendChatMessage("user", prompt || "Please analyze the attached media and files.");
   const assistantBubble = appendChatMessage("assistant", "Thinking…");
-  const greeting = /^(hi|hlo|hello|hey|good morning|good afternoon|good evening|how are you)[!.\\s]*$/i.test(prompt);
+  const greeting = /^(hi|hlo|hello|hey|good morning|good afternoon|good evening|how are you)[!.,\s]*$/i.test(prompt);
   if (greeting) {
     const greetingAnswer = "Hello! How can I help you today?";
     lastAnswer = greetingAnswer; resultBox.textContent = greetingAnswer;
