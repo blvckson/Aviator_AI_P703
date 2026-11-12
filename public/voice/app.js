@@ -38,6 +38,7 @@ class PocketVoice {
     this.audioContext = null;
     this.isGenerating = false;
     this.isWorkerReady = false;
+    this.pendingVoiceFile = null;
 
     // Voice cloning
     this.mediaRecorder = null;
@@ -57,6 +58,15 @@ class PocketVoice {
 
     // Metrics
     this.rtfMovingAvg = 0;
+    this.playbackSpeed = 0.90;
+    try {
+      const savedPlaybackSpeed = Number(localStorage.getItem("askme_voice_studio_playback_speed"));
+      if (Number.isFinite(savedPlaybackSpeed) && savedPlaybackSpeed >= 0.70 && savedPlaybackSpeed <= 1.50) {
+        this.playbackSpeed = savedPlaybackSpeed;
+      }
+    } catch (_) {
+      // Private browsing or restricted storage must not prevent voice studio startup.
+    }
 
     // Built-in voices list
     this.builtinVoices = [];
@@ -75,6 +85,8 @@ class PocketVoice {
       langSelect: document.getElementById("language-select"),
       voiceSelect: document.getElementById("voice-select"),
       textInput: document.getElementById("text-input"),
+      narratorSpeed: document.getElementById("narrator-speed"),
+      narratorSpeedValue: document.getElementById("narrator-speed-value"),
       charCount: document.getElementById("char-count"),
       btnGenerate: document.getElementById("btn-generate"),
       btnStop: document.getElementById("btn-stop"),
@@ -201,6 +213,21 @@ class PocketVoice {
       });
     });
 
+    this.el.narratorSpeed.value = String(this.playbackSpeed);
+    this.el.narratorSpeedValue.textContent = `${this.playbackSpeed.toFixed(2)}×`;
+    this.el.narratorSpeed.addEventListener("input", () => {
+      const requestedRate = Number(this.el.narratorSpeed.value);
+      if (!Number.isFinite(requestedRate)) return;
+      this.playbackSpeed = Math.min(1.50, Math.max(0.70, requestedRate));
+      this.el.narratorSpeed.value = String(this.playbackSpeed);
+      this.el.narratorSpeedValue.textContent = `${this.playbackSpeed.toFixed(2)}×`;
+      try {
+        localStorage.setItem("askme_voice_studio_playback_speed", String(this.playbackSpeed));
+      } catch (_) {
+        // Playback speed still applies for this session when storage is unavailable.
+      }
+    });
+
     this.el.btnGenerate.addEventListener("click", () => this.generate());
     this.el.btnStop.addEventListener("click", () => this.stop());
 
@@ -234,7 +261,7 @@ class PocketVoice {
     this.updateStatus("Initializing…", "loading");
     this.el.btnGenerate.disabled = true;
     this.el.btnRecord.disabled = true;
-    this.el.btnUpload.disabled = true;
+    this.el.btnUpload.disabled = false;
     this.el.voiceSelect.disabled = true;
     this.el.langSelect.disabled = true;
     this.el.voiceGallery.classList.add("is-disabled");
@@ -717,11 +744,28 @@ class PocketVoice {
     this.resetUI();
   }
 
+  applyPlaybackSpeed(samples) {
+    const rate = this.playbackSpeed;
+    if (Math.abs(rate - 1) < 0.001 || samples.length < 2) return samples;
+    // Linear resampling changes playback duration (and pitch) without changing
+    // the model output or the WAV download, which remains at its native speed.
+    const outputLength = Math.max(1, Math.floor(samples.length / rate));
+    const output = new Float32Array(outputLength);
+    for (let i = 0; i < outputLength; i++) {
+      const position = i * rate;
+      const left = Math.min(Math.floor(position), samples.length - 1);
+      const right = Math.min(left + 1, samples.length - 1);
+      const fraction = position - left;
+      output[i] = samples[left] * (1 - fraction) + samples[right] * fraction;
+    }
+    return output;
+  }
+
   handleAudioChunk(data, metrics) {
     if (!this.isGenerating) return;
     const pcm = new Float32Array(data);
     this.currentChunks.push(pcm);
-    this.player.playAudio(pcm);
+    this.player.playAudio(this.applyPlaybackSpeed(pcm));
 
     if (metrics?.isFirst) {
       this.el.statTTFB.textContent = Math.round(performance.now() - this.generationStartTime);
@@ -827,7 +871,7 @@ class PocketVoice {
     this.el.btnGenerate.classList.remove("is-loading");
     this.el.btnStop.style.display = "none";
     this.el.btnRecord.disabled = !this.isWorkerReady;
-    this.el.btnUpload.disabled = !this.isWorkerReady;
+    this.el.btnUpload.disabled = false;
     this.el.voiceSelect.disabled = !this.isWorkerReady;
     this.el.langSelect.disabled = !this.isWorkerReady;
     this.el.voiceGallery.classList.toggle("is-disabled", !this.isWorkerReady);
