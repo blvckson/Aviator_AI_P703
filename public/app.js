@@ -65,6 +65,19 @@ async function askAI(){
   if(selectedFiles.some(f=>f.size>MAX_FILE_BYTES)){statusBox.textContent="One or more files exceed the 12 MB per-file limit.";return;}
   buildButton.disabled=true;statusBox.textContent="Preparing your files…";resultBox.textContent="";mediaBox.replaceChildren();sourceList.replaceChildren();sourcesBox.hidden=true;
   try{
+    const selfModify=["modify yourself","upgrade yourself","fix yourself","change yourself","improve yourself","add yourself"].some(prefix=>originalPrompt.toLowerCase().startsWith(prefix));
+    if(selfModify){
+      let ownerKey=localStorage.getItem("freeapp_ai_owner_key")||"";
+      if(!ownerKey){ownerKey=window.prompt("Enter your Ask.Me owner key:");if(ownerKey)localStorage.setItem("freeapp_ai_owner_key",ownerKey);}
+      if(!ownerKey)throw new Error("Owner key is required for self-modification.");
+      statusBox.textContent="Owner command accepted — preparing the change…";
+      const response=await fetch(API_BASE+"/api/self-modify",{method:"POST",headers:{"Content-Type":"application/json","X-FreeApp-Admin-Key":ownerKey},body:JSON.stringify({command:originalPrompt})});
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(data.error||"Self-modification failed.");
+      resultBox.textContent=(data.summary||"Self-modification completed.")+(Array.isArray(data.files)&&data.files.length?"\n\nChanged: "+data.files.map(f=>f.path).join(", "):"");
+      statusBox.textContent=data.changed?"Self-modification committed. GitHub Actions should build the update.":"No code change was necessary.";
+      return;
+    }
     const images=[],extracted=[];
     for(let i=0;i<selectedFiles.length;i++){
       const file=selectedFiles[i];statusBox.textContent="Processing "+file.name+" ("+(i+1)+"/"+selectedFiles.length+")…";
@@ -131,13 +144,34 @@ async function extractVideoFrames(file){
   }finally{URL.revokeObjectURL(url);video.removeAttribute("src");video.load();}
 }
 function seekVideo(video,time){return new Promise((resolve,reject)=>{const done=()=>{video.removeEventListener("seeked",done);video.removeEventListener("error",fail);resolve();};const fail=()=>{video.removeEventListener("seeked",done);reject(new Error("Could not sample video frame."));};video.addEventListener("seeked",done,{once:true});video.addEventListener("error",fail,{once:true});video.currentTime=time;});}
+async function preprocessImageForOcr(file,rotation=0){
+  const url=URL.createObjectURL(file),source=await loadImage(url);
+  const scale=Math.min(2,1800/Math.max(source.naturalWidth,source.naturalHeight));
+  const width=Math.max(1,Math.round(source.naturalWidth*scale)),height=Math.max(1,Math.round(source.naturalHeight*scale));
+  const sideways=rotation%180!==0,canvas=document.createElement("canvas");
+  canvas.width=sideways?height:width;canvas.height=sideways?width:height;
+  const ctx=canvas.getContext("2d",{willReadFrequently:true});ctx.fillStyle="#fff";ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.translate(canvas.width/2,canvas.height/2);ctx.rotate(rotation*Math.PI/180);ctx.drawImage(source,-width/2,-height/2,width,height);
+  const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);
+  for(let i=0;i<pixels.data.length;i+=4){const gray=.299*pixels.data[i]+.587*pixels.data[i+1]+.114*pixels.data[i+2];const v=Math.max(0,Math.min(255,(gray-128)*1.65+128));pixels.data[i]=pixels.data[i+1]=pixels.data[i+2]=v;pixels.data[i+3]=255;}
+  ctx.putImageData(pixels,0,0);return canvas;
+}
 async function extractLocalOcr(files){
   if(!window.Tesseract?.createWorker)return "";
   let worker;
   try{
     worker=await Tesseract.createWorker("eng",1,{logger:m=>{if(m.status==="recognizing text")statusBox.textContent="Reading image text: "+Math.round((m.progress||0)*100)+"%";}});
     const output=[];
-    for(let i=0;i<files.length;i++){const result=await worker.recognize(files[i]);const text=String(result?.data?.text||"").trim();if(text)output.push("IMAGE "+(i+1)+":\n"+text);}
+    for(let i=0;i<files.length;i++){
+      let best={text:"",confidence:0};
+      for(const rotation of [0,90,270]){
+        if(rotation&&best.confidence>=55&&best.text.length>=12)break;
+        const canvas=await preprocessImageForOcr(files[i],rotation),result=await worker.recognize(canvas);
+        const candidate={text:String(result?.data?.text||"").trim(),confidence:Number(result?.data?.confidence||0)};
+        if(candidate.confidence>best.confidence||candidate.text.length>best.text.length+8)best=candidate;
+      }
+      if(best.text)output.push("IMAGE "+(i+1)+" ("+Math.round(best.confidence)+"% confidence)"+(best.confidence<55?" [LOW CONFIDENCE — verify against original]":"")+":\n"+best.text);
+    }
     return output.join("\n\n").slice(0,12000);
   }catch(error){console.warn("OCR unavailable:",error);return "";}
   finally{if(worker)try{await worker.terminate();}catch(_){}}
