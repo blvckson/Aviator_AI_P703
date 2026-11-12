@@ -324,7 +324,8 @@ async function askAI() {
   } catch (error) {
     const timedOut = error && (error.name === "AbortError" || /aborted/i.test(error.message || ""));
     statusBox.textContent = timedOut ? "The request timed out. Your text is safe; please retry." : "Request failed.";
-    resultBox.textContent = timedOut ? "Ask.Me AI did not receive a response within two minutes." : (error.message || "Unexpected request error.");\n    assistantBubble.textContent = "Sorry, something went wrong: " + resultBox.textContent;
+    resultBox.textContent = timedOut ? "Ask.Me AI did not receive a response within two minutes." : (error.message || "Unexpected request error.");
+    assistantBubble.textContent = "Sorry, something went wrong: " + resultBox.textContent;
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
     buildButton.disabled = false;
@@ -424,7 +425,7 @@ function extractVideoFrames(file) {
         const canvas = document.createElement("canvas"); const scale = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));
         canvas.width = Math.max(1, Math.round(video.videoWidth * scale)); canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
         const ctx = canvas.getContext("2d"); const frames = [];
-        for (const time of [0, video.duration * .25, video.duration * .5, video.duration * .75, Math.max(0, video.duration - .1)]) {
+        for (const time of [Math.min(0.05, video.duration * .1), video.duration * .25, video.duration * .5, video.duration * .75, Math.max(0, video.duration - .1)]) {
           await new Promise((ok, fail) => { video.onseeked = ok; video.onerror = fail; video.currentTime = Math.min(time, Math.max(0, video.duration - .05)); });
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height); frames.push(canvas.toDataURL("image/jpeg", .78));
         }
