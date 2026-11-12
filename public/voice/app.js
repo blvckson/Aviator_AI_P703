@@ -377,6 +377,12 @@ class PocketVoice {
         this.el.btnUpload.disabled = false;
         this.setCloneStatus("", "");
         this.resetUI();
+        if (this.pendingVoiceFile) {
+          const queuedFile = this.pendingVoiceFile;
+          this.pendingVoiceFile = null;
+          this.setCloneStatus("Processing " + queuedFile.name + "…", "");
+          this.processVoiceClip(queuedFile);
+        }
         break;
 
       case "audio_chunk":
@@ -474,7 +480,8 @@ class PocketVoice {
     const file = e.target.files[0];
     if (!file) return;
     if (!this.isWorkerReady) {
-      this.setCloneStatus("Model still loading… please wait", "");
+      this.pendingVoiceFile = file;
+      this.setCloneStatus("Voice file queued. It will be encoded as soon as the voice model finishes loading.", "");
       e.target.value = "";
       return;
     }
