@@ -17,7 +17,8 @@ import androidx.webkit.WebViewClientCompat;
 import android.webkit.WebChromeClient;
 import android.webkit.PermissionRequest;
 import android.webkit.JavascriptInterface;
-import android.speech.tts.TextToSpeech;\nimport android.speech.tts.UtteranceProgressListener;
+import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
@@ -54,7 +55,20 @@ public class MainActivity extends Activity {
                 }
             }
         });
-        textToSpeech.setOnUtteranceProgressListener(new UtteranceProgressListener() {\n            @Override public void onStart(String utteranceId) { }\n            @Override public void onDone(String utteranceId) {\n                if (utteranceId != null && utteranceId.startsWith("askme-final-")) {\n                    runOnUiThread(() -> web.evaluateJavascript("window.askMeNarrationFinished && window.askMeNarrationFinished()", null));\n                }\n            }\n            @Override public void onError(String utteranceId) {\n                if (utteranceId != null && utteranceId.startsWith("askme-final-")) {\n                    runOnUiThread(() -> web.evaluateJavascript("window.askMeNarrationFinished && window.askMeNarrationFinished()", null));\n                }\n            }\n        });\n        web.addJavascriptInterface(new NativeNarrator(), "AskMeNativeTTS");
+        textToSpeech.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+            @Override public void onStart(String utteranceId) { }
+            @Override public void onDone(String utteranceId) {
+                if (utteranceId != null && utteranceId.startsWith("askme-final-")) {
+                    runOnUiThread(() -> web.evaluateJavascript("window.askMeNarrationFinished && window.askMeNarrationFinished()", null));
+                }
+            }
+            @Override public void onError(String utteranceId) {
+                if (utteranceId != null && utteranceId.startsWith("askme-final-")) {
+                    runOnUiThread(() -> web.evaluateJavascript("window.askMeNarrationFinished && window.askMeNarrationFinished()", null));
+                }
+            }
+        });
+        web.addJavascriptInterface(new NativeNarrator(), "AskMeNativeTTS");
 
         web.setWebChromeClient(new WebChromeClient() {
             @Override public void onPermissionRequest(final PermissionRequest request) {
