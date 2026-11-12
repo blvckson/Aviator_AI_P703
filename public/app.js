@@ -147,7 +147,7 @@ function speakText(text) {
   const plainText = String(text || "").replace(/\s+/g, " ").trim();
   if (!plainText) return false;
   stopNarrator();
-  const chunks = splitNarratorChunks(plainText, 480);
+  const chunks = splitNarratorChunks(plainText);
   const cleanChunks = chunks.map(chunk => chunk.trim()).filter(Boolean);
   if (window.AskMeNativeTTS && typeof window.AskMeNativeTTS.speakChunk === "function") {
     speaking = true;
