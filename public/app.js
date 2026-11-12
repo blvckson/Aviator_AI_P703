@@ -3,6 +3,7 @@ const fileInput=document.getElementById("file-input");
 const fileStatus=document.getElementById("file-status");
 const preview=document.getElementById("preview");
 const resultBox=document.getElementById("result");
+const chatMessages=document.getElementById("chat-messages");
 const mediaBox=document.getElementById("media");
 const statusBox=document.getElementById("status");
 const sourcesBox=document.getElementById("sources");
@@ -64,6 +65,8 @@ async function askAI(){
   if(!originalPrompt&&!selectedFiles.length){statusBox.textContent="Enter a question or attach a file first.";return;}
   if(selectedFiles.some(f=>f.size>MAX_FILE_BYTES)){statusBox.textContent="One or more files exceed the 12 MB per-file limit.";return;}
   buildButton.disabled=true;statusBox.textContent="Preparing your files…";resultBox.textContent="";mediaBox.replaceChildren();sourceList.replaceChildren();sourcesBox.hidden=true;
+  const userBubble=appendChatMessage("user",originalPrompt||"Please analyse the attached file(s): "+selectedFiles.map(f=>f.name).join(", "));
+  const assistantBubble=appendChatMessage("assistant","Preparing your response…");
   try{
     const selfModify=["modify yourself","upgrade yourself","fix yourself","change yourself","improve yourself","add yourself"].some(prefix=>originalPrompt.toLowerCase().startsWith(prefix));
     if(selfModify){
@@ -74,7 +77,7 @@ async function askAI(){
       const response=await fetch(API_BASE+"/api/self-modify",{method:"POST",headers:{"Content-Type":"application/json","X-FreeApp-Admin-Key":ownerKey},body:JSON.stringify({command:originalPrompt})});
       const data=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(data.error||"Self-modification failed.");
-      resultBox.textContent=(data.summary||"Self-modification completed.")+(Array.isArray(data.files)&&data.files.length?"\n\nChanged: "+data.files.map(f=>f.path).join(", "):"");
+      const selfAnswer=(data.summary||"Self-modification completed.")+(Array.isArray(data.files)&&data.files.length?"\n\nChanged: "+data.files.map(f=>f.path).join(", "):"");resultBox.textContent=selfAnswer;assistantBubble.querySelector(".message-text").textContent=selfAnswer;
       statusBox.textContent=data.changed?"Self-modification committed. GitHub Actions should build the update.":"No code change was necessary.";
       return;
     }
@@ -97,12 +100,12 @@ async function askAI(){
     const response=await fetch(API_BASE+"/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt,images,ocrText})});
     const data=await response.json().catch(()=>({}));
     if(!response.ok)throw new Error(data.error||"The AI service returned an error.");
-    const answer=String(data.result||"No response was returned.");resultBox.textContent=answer;
+    const answer=String(data.result||"No response was returned.");resultBox.textContent=answer;assistantBubble.querySelector(".message-text").textContent=answer;
     // Narration is isolated: speech errors must never turn a successful answer into a failed request.
     speakAnswer(answer);
     renderMedia(data.media);renderSources(data.sources);
     statusBox.textContent=data.researched?"Done — live research was used.":"Done.";
-  }catch(error){statusBox.textContent="Request failed.";resultBox.textContent=error.message;}
+  }catch(error){statusBox.textContent="Request failed.";resultBox.textContent=error.message;assistantBubble.querySelector(".message-text").textContent="Sorry, something went wrong: "+error.message;}
   finally{buildButton.disabled=false;}
 }
 async function imageToDataUrl(file){
@@ -178,3 +181,13 @@ async function extractLocalOcr(files){
 }
 function renderSources(sources){if(!Array.isArray(sources))return;for(const source of sources){if(!source?.url)continue;const li=document.createElement("li"),a=document.createElement("a");a.href=source.url;a.target="_blank";a.rel="noopener noreferrer";a.textContent=source.title||source.url;li.appendChild(a);sourceList.appendChild(li);}sourcesBox.hidden=sourceList.children.length===0;}
 function renderMedia(media){if(!Array.isArray(media))return;for(const item of media){if(!item?.url)continue;const wrap=document.createElement("div");wrap.className="media-card";if(item.type==="image"){const img=document.createElement("img");img.src=item.url;img.alt=item.title||"Relevant image";img.loading="lazy";wrap.appendChild(img);}else if(item.type==="video"){const link=document.createElement("a");link.href=item.url;link.target="_blank";link.rel="noopener noreferrer";link.textContent="▶ "+(item.title||"Watch relevant video");wrap.appendChild(link);}if(item.title){const caption=document.createElement("div");caption.textContent=item.title;wrap.appendChild(caption);}mediaBox.appendChild(wrap);}}
+
+function appendChatMessage(role,text){
+  const empty=chatMessages.querySelector(".chat-empty");if(empty)empty.remove();
+  const row=document.createElement("article");row.className="chat-message "+(role==="user"?"from-user":"from-assistant");
+  const bubble=document.createElement("div");bubble.className="message-bubble";
+  const label=document.createElement("div");label.className="message-sender";label.textContent=role==="user"?"You":"Ask.Me";
+  const body=document.createElement("div");body.className="message-text";body.textContent=text;
+  const time=document.createElement("time");time.className="message-time";time.dateTime=new Date().toISOString();time.textContent=new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+  bubble.append(label,body,time);row.appendChild(bubble);chatMessages.appendChild(row);chatMessages.scrollTop=chatMessages.scrollHeight;return row;
+}
