@@ -138,7 +138,12 @@ async function waitForNativeNarrator(timeoutMs = 8000) {
   }
   return false;
 }
-window.askMeNarrationFinished = function () {\n  speaking = false;\n  if (narratorStopButton) narratorStopButton.disabled = true;\n  if (narratorButton) narratorButton.disabled = !lastAnswer;\n};\nfunction speakText(text) {
+window.askMeNarrationFinished = function () {
+  speaking = false;
+  if (narratorStopButton) narratorStopButton.disabled = true;
+  if (narratorButton) narratorButton.disabled = !lastAnswer;
+};
+function speakText(text) {
   const plainText = String(text || "").replace(/\s+/g, " ").trim();
   if (!plainText) return false;
   stopNarrator();
