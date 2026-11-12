@@ -3,7 +3,9 @@
 const byId = (id) => document.getElementById(id);
 const promptBox = byId("prompt");
 const imageInput = byId("image-input");
-const fileInput = byId("file-input");\nconst videoInput = byId("video-input");\nconst videoFileStatus = byId("video-file-status");
+const fileInput = byId("file-input");
+const videoInput = byId("video-input");
+const videoFileStatus = byId("video-file-status");
 const docFileStatus = byId("doc-file-status");
 const fileStatus = byId("file-status");
 const preview = byId("preview");
@@ -32,7 +34,8 @@ const MAX_PROMPT_CHARS = 24000;
 const REQUEST_TIMEOUT_MS = 120000;
 const DEFAULT_NARRATOR_RATE = 0.90;
 let selectedImages = [];
-let selectedDocs = [];\nlet selectedVideos = [];
+let selectedDocs = [];
+let selectedVideos = [];
 let lastAnswer = "";
 let speechQueue = [];
 let speaking = false;
@@ -125,26 +128,54 @@ function speakNextChunk() {
   };
   window.speechSynthesis.speak(utterance);
 }
-async function waitForNativeNarrator(timeoutMs = 8000) {\n  const started = Date.now();\n  while (Date.now() - started < timeoutMs) {\n    try { if (window.AskMeNativeTTS && window.AskMeNativeTTS.isReady()) return true; } catch (_) { /* bridge may still be initializing */ }\n    await new Promise(resolve => setTimeout(resolve, 200));\n  }\n  return false;\n}\nfunction speakText(text) {
+async function waitForNativeNarrator(timeoutMs = 8000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    try { if (window.AskMeNativeTTS && window.AskMeNativeTTS.isReady()) return true; } catch (_) { /* bridge may still be initializing */ }
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  return false;
+}
+async function waitForNativeNarrator(timeoutMs = 8000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    try {
+      if (window.AskMeNativeTTS && typeof window.AskMeNativeTTS.isReady === "function" && window.AskMeNativeTTS.isReady()) return true;
+    } catch (_) { /* Native bridge may still be initializing. */ }
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  return false;
+}
+function speakText(text) {
   const plainText = String(text || "").replace(/\s+/g, " ").trim();
   if (!plainText) return false;
   stopNarrator();
   const chunks = plainText.match(/[\s\S]{1,1800}(?:\s|$)/g) || [plainText];
   const cleanChunks = chunks.map(chunk => chunk.trim()).filter(Boolean);
-  if (window.AskMeNativeTTS && typeof window.AskMeNativeTTS.speakChunk === "function" &&
-      typeof window.AskMeNativeTTS.isReady === "function" && window.AskMeNativeTTS.isReady()) {
-    const rate = getNarratorRate();
-    const accepted = cleanChunks.every((chunk, index) => window.AskMeNativeTTS.speakChunk(chunk, rate, index > 0));
-    if (accepted) {
-      speaking = true;
-      if (narratorStopButton) narratorStopButton.disabled = false;
-      if (narratorButton) narratorButton.disabled = true;
-      return true;
-    }
-    window.AskMeNativeTTS.stop();
+  if (window.AskMeNativeTTS && typeof window.AskMeNativeTTS.speakChunk === "function") {
+    speaking = true;
+    if (narratorStopButton) narratorStopButton.disabled = false;
+    if (narratorButton) narratorButton.disabled = true;
+    waitForNativeNarrator().then(ready => {
+      if (!speaking) return;
+      if (!ready) {
+        speaking = false;
+        if (narratorStopButton) narratorStopButton.disabled = true;
+        if (narratorButton) narratorButton.disabled = !lastAnswer;
+        if (statusBox) statusBox.textContent = "Android text-to-speech did not initialize. Check that a speech engine is installed.";
+        return;
+      }
+      const rate = getNarratorRate();
+      const accepted = cleanChunks.every((chunk, index) => window.AskMeNativeTTS.speakChunk(chunk, rate, index > 0));
+      if (!accepted) {
+        stopNarrator();
+        if (statusBox) statusBox.textContent = "Android text-to-speech could not start. Please try again.";
+      }
+    });
+    return true;
   }
   if (!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance === "undefined") {
-    statusBox.textContent = "Speech playback is not supported by this Android WebView.";
+    if (statusBox) statusBox.textContent = "Speech playback is not supported by this browser.";
     return false;
   }
   speechQueue = cleanChunks;
@@ -154,7 +185,6 @@ async function waitForNativeNarrator(timeoutMs = 8000) {\n  const started = Date
   speakNextChunk();
   return true;
 }
-
 if (narratorSpeed) {
   narratorSpeed.value = String(readPreference("askme_narrator_rate", DEFAULT_NARRATOR_RATE));
   narratorSpeed.addEventListener("input", () => {
@@ -206,7 +236,11 @@ if (fileInput) fileInput.addEventListener("change", () => {
       : "No supported documents selected";
   }
 });
-if (videoInput) videoInput.addEventListener("change", () => {\n  selectedVideos = Array.from(videoInput.files || []).filter(file => file.type.startsWith("video/")).slice(0, 2);\n  if (videoFileStatus) videoFileStatus.textContent = selectedVideos.length ? selectedVideos.length + " video(s) selected (maximum 2)" : "No video selected";\n});\nif (buildButton) buildButton.addEventListener("click", askAI);
+if (videoInput) videoInput.addEventListener("change", () => {
+  selectedVideos = Array.from(videoInput.files || []).filter(file => file.type.startsWith("video/")).slice(0, 2);
+  if (videoFileStatus) videoFileStatus.textContent = selectedVideos.length ? selectedVideos.length + " video(s) selected (maximum 2)" : "No video selected";
+});
+if (buildButton) buildButton.addEventListener("click", askAI);
 
 function buildQualityPrompt(userPrompt) {
   const rules = [];
@@ -249,17 +283,28 @@ async function askAI() {
   if (sourceList) sourceList.replaceChildren();
   if (sourcesBox) sourcesBox.hidden = true;
 
-  const userBubble = appendChatMessage("user", prompt || "Please analyze the attached media and files.");\n  const assistantBubble = appendChatMessage("assistant", "Thinking…");\n  const greeting = /^(hi|hlo|hello|hey|good morning|good afternoon|good evening|how are you)[!.\\s]*$/i.test(prompt);\n  if (greeting) {\n    const greetingAnswer = "Hello! How can I help you today?";\n    lastAnswer = greetingAnswer; resultBox.textContent = greetingAnswer;\n    assistantBubble.textContent = greetingAnswer; statusBox.textContent = "Done.";\n    if (narratorButton) narratorButton.disabled = false;\n    buildButton.disabled = false; return;\n  }\n  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const userBubble = appendChatMessage("user", prompt || "Please analyze the attached media and files.");
+  const assistantBubble = appendChatMessage("assistant", "Thinking…");
+  const greeting = /^(hi|hlo|hello|hey|good morning|good afternoon|good evening|how are you)[!.\\s]*$/i.test(prompt);
+  if (greeting) {
+    const greetingAnswer = "Hello! How can I help you today?";
+    lastAnswer = greetingAnswer; resultBox.textContent = greetingAnswer;
+    assistantBubble.textContent = greetingAnswer; statusBox.textContent = "Done.";
+    if (narratorButton) narratorButton.disabled = false;
+    buildButton.disabled = false; return;
+  }
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
   const timeoutId = controller ? setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS) : null;
   try {
     const images = [];
     for (const file of selectedImages) images.push(await toDataUrl(file));
+    for (const file of selectedVideos) images.push(...await extractVideoFrames(file));
     const documentParts = [];
     for (const file of selectedDocs) {
       const content = await toText(file);
       documentParts.push("--- ATTACHED FILE: " + file.name + " ---\n" + content);
     }
-    const effectivePrompt = [prompt || (images.length ? "Please analyze the attached image(s) and describe the relevant details." : ""), ...documentParts].filter(Boolean).join("\n\n");
+    const effectivePrompt = [prompt || (images.length ? "Please analyze the attached images and sampled video frames." : ""), ...documentParts, ...selectedVideos.map(file => "Attached video: " + file.name + ". Images include sampled video frames.")].filter(Boolean).join("\n\n");
     if (effectivePrompt.length > MAX_PROMPT_CHARS) {
       throw new Error("The question and attached text exceed " + MAX_PROMPT_CHARS + " characters. Attach fewer or shorter files.");
     }
@@ -295,7 +340,17 @@ async function askAI() {
   }
 }
 
-function appendChatMessage(role, text) {\n  if (!chatMessages) return { textContent: text };\n  const bubble = document.createElement("div");\n  bubble.className = "chat-message " + (role === "user" ? "chat-user" : "chat-assistant");\n  bubble.textContent = text;\n  chatMessages.appendChild(bubble);\n  chatMessages.scrollTop = chatMessages.scrollHeight;\n  return bubble;\n}\n\nfunction renderSources(sources) {
+function appendChatMessage(role, text) {
+  if (!chatMessages) return { textContent: text };
+  const bubble = document.createElement("div");
+  bubble.className = "chat-message " + (role === "user" ? "chat-user" : "chat-assistant");
+  bubble.textContent = text;
+  chatMessages.appendChild(bubble);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+  return bubble;
+}
+
+function renderSources(sources) {
   if (!Array.isArray(sources) || !sourceList || !sourcesBox) return;
   for (const source of sources) {
     if (!source || typeof source.url !== "string" || !/^https?:\/\//i.test(source.url)) continue;
@@ -338,7 +393,26 @@ function renderMedia(media) {
     mediaBox.appendChild(wrap);
   }
 }
-function toText(file) {
+async function toText(file) {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".pdf")) {
+    if (!window.pdfjsLib) throw new Error("PDF reader is unavailable. Reload Ask.Me while connected to the internet.");
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const pages = Math.min(pdf.numPages, 30);
+    let output = "";
+    for (let pageNo = 1; pageNo <= pages && output.length < MAX_DOC_CHARS; pageNo++) {
+      const page = await pdf.getPage(pageNo);
+      const content = await page.getTextContent();
+      output += "\n[Page " + pageNo + "] " + content.items.map(item => item.str).join(" ");
+    }
+    return output.slice(0, MAX_DOC_CHARS);
+  }
+  if (name.endsWith(".docx")) {
+    if (!window.mammoth) throw new Error("DOCX reader is unavailable. Reload Ask.Me while connected to the internet.");
+    const result = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+    return String(result.value || "").slice(0, MAX_DOC_CHARS);
+  }
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || "").slice(0, MAX_DOC_CHARS));
@@ -346,7 +420,28 @@ function toText(file) {
     reader.readAsText(file);
   });
 }
-function extractVideoFrames(file) {\n  return new Promise((resolve, reject) => {\n    const url = URL.createObjectURL(file); const video = document.createElement("video");\n    video.preload = "metadata"; video.muted = true; video.playsInline = true; video.src = url;\n    const cleanup = () => { URL.revokeObjectURL(url); video.removeAttribute("src"); video.load(); };\n    video.onerror = () => { cleanup(); reject(new Error("Could not open video " + file.name)); };\n    video.onloadedmetadata = async () => {\n      try {\n        if (!Number.isFinite(video.duration) || video.duration <= 0 || video.duration > 60) throw new Error("Video must be 60 seconds or shorter: " + file.name);\n        const canvas = document.createElement("canvas"); const scale = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));\n        canvas.width = Math.max(1, Math.round(video.videoWidth * scale)); canvas.height = Math.max(1, Math.round(video.videoHeight * scale));\n        const ctx = canvas.getContext("2d"); const frames = [];\n        for (const time of [0, video.duration * .25, video.duration * .5, video.duration * .75, Math.max(0, video.duration - .1)]) {\n          await new Promise((ok, fail) => { video.onseeked = ok; video.onerror = fail; video.currentTime = Math.min(time, Math.max(0, video.duration - .05)); });\n          ctx.drawImage(video, 0, 0, canvas.width, canvas.height); frames.push(canvas.toDataURL("image/jpeg", .78));\n        }\n        cleanup(); resolve(frames);\n      } catch (error) { cleanup(); reject(error); }\n    };\n  });\n}\nfunction toDataUrl(file) {
+function extractVideoFrames(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file); const video = document.createElement("video");
+    video.preload = "metadata"; video.muted = true; video.playsInline = true; video.src = url;
+    const cleanup = () => { URL.revokeObjectURL(url); video.removeAttribute("src"); video.load(); };
+    video.onerror = () => { cleanup(); reject(new Error("Could not open video " + file.name)); };
+    video.onloadedmetadata = async () => {
+      try {
+        if (!Number.isFinite(video.duration) || video.duration <= 0 || video.duration > 60) throw new Error("Video must be 60 seconds or shorter: " + file.name);
+        const canvas = document.createElement("canvas"); const scale = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));
+        canvas.width = Math.max(1, Math.round(video.videoWidth * scale)); canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+        const ctx = canvas.getContext("2d"); const frames = [];
+        for (const time of [0, video.duration * .25, video.duration * .5, video.duration * .75, Math.max(0, video.duration - .1)]) {
+          await new Promise((ok, fail) => { video.onseeked = ok; video.onerror = fail; video.currentTime = Math.min(time, Math.max(0, video.duration - .05)); });
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height); frames.push(canvas.toDataURL("image/jpeg", .78));
+        }
+        cleanup(); resolve(frames);
+      } catch (error) { cleanup(); reject(error); }
+    };
+  });
+}
+function toDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
