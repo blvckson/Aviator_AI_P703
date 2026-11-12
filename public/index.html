@@ -14,8 +14,9 @@
       <button id="voice-studio-button" class="icon-button" type="button">🎙 Voice Clone</button>
     </header>
     <section class="card">
-      <label for="prompt">What would you like to ask?</label>
-      <textarea id="prompt" rows="7" placeholder="Ask anything, or attach images, videos or documents..."></textarea>
+      <section id="chat-messages" class="chat-messages" aria-label="Conversation" aria-live="polite"><div class="chat-empty">Your conversation will appear here.</div></section>
+      <label for="prompt">Message</label>
+      <textarea id="prompt" rows="7" placeholder="Type a message..."></textarea>
       <div class="chat-attachments">
         <button id="attach-button" class="attach-button" type="button" aria-label="Attach files">＋</button>
         <input id="file-input" type="file" accept="image/*,video/*,.pdf,.txt,.md,.csv,.docx,application/pdf,text/plain,text/markdown,text/csv,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple hidden>
@@ -32,7 +33,7 @@
       </section>
       <button id="build-button" type="button">Ask</button>
       <div id="status" class="status" aria-live="polite"></div>
-      <div id="result" aria-live="polite"></div>
+      <div id="result" aria-live="polite" hidden></div>
       <div id="media"></div>
       <div id="sources" class="sources" hidden><strong>Web sources used</strong><ul id="source-list"></ul></div>
     </section>
