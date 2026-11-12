@@ -296,19 +296,19 @@ async function askAI() {
     const images = [];
     for (const file of selectedImages) images.push(await toDataUrl(file));
     for (const file of selectedVideos) images.push(...await extractVideoFrames(file));
-    const documentParts = [];
+    const ocrText = await extractLocalOcr(selectedImages);\n    const documentParts = [];
     for (const file of selectedDocs) {
       const content = await toText(file);
       documentParts.push("--- ATTACHED FILE: " + file.name + " ---\n" + content);
     }
-    const effectivePrompt = [prompt || (images.length ? "Please analyze the attached images and sampled video frames." : ""), ...documentParts, ...selectedVideos.map(file => "Attached video: " + file.name + ". Images include sampled video frames.")].filter(Boolean).join("\n\n");
+    const effectivePrompt = [prompt || (images.length ? "Please analyze the attached images and sampled video frames." : ""), ...documentParts, ...(ocrText ? ["Text extracted from attached images:\n" + ocrText] : []), ...selectedVideos.map(file => "Attached video: " + file.name + ". Images include sampled video frames.")].filter(Boolean).join("\n\n");
     if (effectivePrompt.length > MAX_PROMPT_CHARS) {
       throw new Error("The question and attached text exceed " + MAX_PROMPT_CHARS + " characters. Attach fewer or shorter files.");
     }
     const response = await fetch(API_BASE + "/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: buildQualityPrompt(effectivePrompt), images, history: [], memorySummary: "" }),
+      body: JSON.stringify({ prompt: buildQualityPrompt(effectivePrompt), images, ocrText, history: [], memorySummary: "" }),
       ...(controller ? { signal: controller.signal } : {})
     });
     const data = await response.json().catch(() => ({}));
@@ -391,6 +391,82 @@ function renderMedia(media) {
     mediaBox.appendChild(wrap);
   }
 }
+async function preprocessImageForOcr(file, rotation = 0) {
+  const source = await new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = URL.createObjectURL(file);
+  });
+  const scale = Math.min(2, 1800 / Math.max(source.naturalWidth, source.naturalHeight));
+  const width = Math.max(1, Math.round(source.naturalWidth * scale));
+  const height = Math.max(1, Math.round(source.naturalHeight * scale));
+  const sideways = rotation % 180 !== 0;
+  const canvas = document.createElement("canvas");
+  canvas.width = sideways ? height : width;
+  canvas.height = sideways ? width : height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.translate(canvas.width / 2, canvas.height / 2);
+  context.rotate(rotation * Math.PI / 180);
+  context.drawImage(source, -width / 2, -height / 2, width, height);
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+  for (let index = 0; index < pixels.data.length; index += 4) {
+    const gray = 0.299 * pixels.data[index] + 0.587 * pixels.data[index + 1] + 0.114 * pixels.data[index + 2];
+    const contrast = Math.max(0, Math.min(255, (gray - 128) * 1.65 + 128));
+    pixels.data[index] = pixels.data[index + 1] = pixels.data[index + 2] = contrast;
+    pixels.data[index + 3] = 255;
+  }
+  context.putImageData(pixels, 0, 0);
+  URL.revokeObjectURL(source.src);
+  return canvas;
+}
+
+async function extractLocalOcr(files) {
+  if (!files?.length || !window.Tesseract?.createWorker) return "";
+  let worker;
+  let ocrTimeout;
+  try {
+    worker = await window.Tesseract.createWorker("eng", 1, {
+      logger: message => {
+        if (message.status === "recognizing text") {
+          statusBox.textContent = "Reading image text locally: " + Math.round((message.progress || 0) * 100) + "%";
+        }
+      }
+    });
+    ocrTimeout = setTimeout(() => { if (worker) worker.terminate().catch(() => {}); }, 45000);
+    const transcripts = [];
+    for (let index = 0; index < files.length; index++) {
+      const file = files[index];
+      let best = { text: "", confidence: 0 };
+      for (const rotation of [0, 90, 270]) {
+        if (rotation && best.confidence >= 55 && best.text.length >= 12) break;
+        const canvas = await preprocessImageForOcr(file, rotation);
+        const result = await worker.recognize(canvas);
+        const candidate = {
+          text: String(result?.data?.text || "").trim(),
+          confidence: Number(result?.data?.confidence || 0)
+        };
+        if (candidate.confidence > best.confidence || candidate.text.length > best.text.length + 8) best = candidate;
+      }
+      if (best.text) {
+        const confidenceNote = best.confidence < 55 ? " [LOW CONFIDENCE — verify against the original image]" : "";
+        transcripts.push("IMAGE " + (index + 1) + " (" + Math.round(best.confidence) + "% confidence)" + confidenceNote + ":\n" + best.text);
+      }
+    }
+    return transcripts.join("\n\n").slice(0, 12000);
+  } catch (error) {
+    console.warn("Local OCR unavailable:", error?.message || error);
+    return "";
+  } finally {
+    clearTimeout(ocrTimeout);
+    if (worker) {
+      try { await worker.terminate(); } catch (_) {}
+    }
+  }
+}
+
 async function toText(file) {
   const name = file.name.toLowerCase();
   if (name.endsWith(".pdf")) {
