@@ -138,7 +138,7 @@ async function waitForNativeNarrator(timeoutMs = 8000) {
   }
   return false;
 }
-function speakText(text) {
+window.askMeNarrationFinished = function () {\n  speaking = false;\n  if (narratorStopButton) narratorStopButton.disabled = true;\n  if (narratorButton) narratorButton.disabled = !lastAnswer;\n};\nfunction speakText(text) {
   const plainText = String(text || "").replace(/\s+/g, " ").trim();
   if (!plainText) return false;
   stopNarrator();
@@ -158,7 +158,7 @@ function speakText(text) {
         return;
       }
       const rate = getNarratorRate();
-      const accepted = cleanChunks.every((chunk, index) => window.AskMeNativeTTS.speakChunk(chunk, rate, index > 0));
+      const accepted = cleanChunks.every((chunk, index) => window.AskMeNativeTTS.speakChunk(chunk, rate, index > 0, index === cleanChunks.length - 1));
       if (!accepted) {
         stopNarrator();
         if (statusBox) statusBox.textContent = "Android text-to-speech could not start. Please try again.";
