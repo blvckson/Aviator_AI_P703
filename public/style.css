@@ -68,4 +68,10 @@ button:disabled { opacity: .6; cursor: wait; }
   .github-agent-actions { grid-template-columns:1fr; }
   .github-agent-actions label, .github-agent-actions select { grid-column:1; }
 }
-\n/* Conversation bubbles use the existing palette; no theme colours are changed. */\n.chat-messages { display:flex; flex-direction:column; gap:10px; max-height:420px; overflow-y:auto; padding:12px; margin:0 0 16px; background:#f4f6f8; border-radius:10px; }\n.chat-message { max-width:88%; padding:11px 14px; border-radius:14px; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.45; }\n.chat-user { align-self:flex-end; background:#e8eef5; border-bottom-right-radius:4px; }\n.chat-assistant { align-self:flex-start; background:#fff; border:1px solid #e1e5ea; border-bottom-left-radius:4px; }\n.chat-empty { color:#666; font-size:13px; text-align:center; padding:12px; }\n
+
+/* Conversation bubbles use the existing palette; no theme colours are changed. */
+.chat-messages { display:flex; flex-direction:column; gap:10px; max-height:420px; overflow-y:auto; padding:12px; margin:0 0 16px; background:#f4f6f8; border-radius:10px; }
+.chat-message { max-width:88%; padding:11px 14px; border-radius:14px; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.45; }
+.chat-user { align-self:flex-end; background:#e8eef5; border-bottom-right-radius:4px; }
+.chat-assistant { align-self:flex-start; background:#fff; border:1px solid #e1e5ea; border-bottom-left-radius:4px; }
+.chat-empty { color:#666; font-size:13px; text-align:center; padding:12px; }
