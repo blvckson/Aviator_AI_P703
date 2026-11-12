@@ -13,6 +13,7 @@ const statusBox = byId("status");
 const sourcesBox = byId("sources");
 const sourceList = byId("source-list");
 const buildButton = byId("build-button");
+const chatMessages = byId("chat-messages");
 const narratorButton = byId("narrator-button");
 const narratorStopButton = byId("narrator-stop");
 const narratorSpeed = byId("narrator-speed");
@@ -124,7 +125,7 @@ function speakNextChunk() {
   };
   window.speechSynthesis.speak(utterance);
 }
-function speakText(text) {
+async function waitForNativeNarrator(timeoutMs = 8000) {\n  const started = Date.now();\n  while (Date.now() - started < timeoutMs) {\n    try { if (window.AskMeNativeTTS && window.AskMeNativeTTS.isReady()) return true; } catch (_) { /* bridge may still be initializing */ }\n    await new Promise(resolve => setTimeout(resolve, 200));\n  }\n  return false;\n}\nfunction speakText(text) {
   const plainText = String(text || "").replace(/\s+/g, " ").trim();
   if (!plainText) return false;
   stopNarrator();
@@ -248,7 +249,7 @@ async function askAI() {
   if (sourceList) sourceList.replaceChildren();
   if (sourcesBox) sourcesBox.hidden = true;
 
-  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const userBubble = appendChatMessage("user", prompt || (selectedImages.length ? "Please analyze the attached image(s)." : "Please review the attached files."));\n  const assistantBubble = appendChatMessage("assistant", "Thinking…");\n  const greeting = /^(hi|hlo|hello|hey|good morning|good afternoon|good evening|how are you)[!.\\s]*$/i.test(prompt);\n  if (greeting) {\n    const greetingAnswer = "Hello! How can I help you today?";\n    lastAnswer = greetingAnswer; resultBox.textContent = greetingAnswer;\n    assistantBubble.textContent = greetingAnswer; statusBox.textContent = "Done.";\n    if (narratorButton) narratorButton.disabled = false;\n    buildButton.disabled = false; return;\n  }\n  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
   const timeoutId = controller ? setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS) : null;
   try {
     const images = [];
@@ -286,7 +287,7 @@ async function askAI() {
   } catch (error) {
     const timedOut = error && (error.name === "AbortError" || /aborted/i.test(error.message || ""));
     statusBox.textContent = timedOut ? "The request timed out. Your text is safe; please retry." : "Request failed.";
-    resultBox.textContent = timedOut ? "Ask.Me AI did not receive a response within two minutes." : (error.message || "Unexpected request error.");
+    resultBox.textContent = timedOut ? "Ask.Me AI did not receive a response within two minutes." : (error.message || "Unexpected request error.");\n    assistantBubble.textContent = "Sorry, something went wrong: " + resultBox.textContent;
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
     buildButton.disabled = false;
@@ -294,7 +295,7 @@ async function askAI() {
   }
 }
 
-function renderSources(sources) {
+function appendChatMessage(role, text) {\n  if (!chatMessages) return { textContent: text };\n  const bubble = document.createElement("div");\n  bubble.className = "chat-message " + (role === "user" ? "chat-user" : "chat-assistant");\n  bubble.textContent = text;\n  chatMessages.appendChild(bubble);\n  chatMessages.scrollTop = chatMessages.scrollHeight;\n  return bubble;\n}\n\nfunction renderSources(sources) {
   if (!Array.isArray(sources) || !sourceList || !sourcesBox) return;
   for (const source of sources) {
     if (!source || typeof source.url !== "string" || !/^https?:\/\//i.test(source.url)) continue;
