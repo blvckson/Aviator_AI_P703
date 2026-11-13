@@ -63,3 +63,9 @@ test("builder can recover files when the model omits paths after language fences
   assert.match(builder, /client\/index\.html/);
   assert.match(builder, /response-first output|SOURCE-FIRST OUTPUT/);
 });
+
+test("builder uses the shared response normalizer in its live request path", () => {
+  assert.match(builder, /const answer = normaliseGeneration\(data\)/);
+  assert.match(builder, /deterministic evidence synthesis|generation services failed/);
+  assert.match(builder, /research fallback instead of generated source code/);
+});
