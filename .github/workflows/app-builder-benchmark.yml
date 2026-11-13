@@ -22,8 +22,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Validate benchmark syntax
-        run: node --check tests/app-builder-benchmark.cjs
+      - name: Validate App Builder JavaScript and regression tests
+        run: |
+          node --check public/app-builder.js
+          node --check tests/app-builder-benchmark.cjs
+          node --test tests/app-builder.test.cjs
       - name: Run 50 live generation cases without API token
         run: node tests/app-builder-benchmark.cjs --live
       - name: Upload benchmark report
