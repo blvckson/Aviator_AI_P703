@@ -22,7 +22,7 @@ test("builder supports web, Android and full-stack project types", () => {
 });
 
 test("builder requests complete multi-file source, tests and honest build status", () => {
-  assert.match(builder, /complete, production-minded source files/);
+  assert.match(builder, /SOURCE-FIRST OUTPUT/);
   assert.match(builder, /automated tests and exact local build\/run commands/);
   assert.match(builder, /Never claim a build passed unless it was actually built/);
   assert.match(builder, /Do not say code was compiled, tested, installed, or deployed unless the operation actually happened/);
