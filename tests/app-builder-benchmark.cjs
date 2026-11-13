@@ -177,7 +177,7 @@ async function main() {
       response = await fetch(ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: promptFor(test), images: [], history: [], memorySummary: "" }),
+        body: JSON.stringify({ mode: "app-builder", prompt: promptFor(test), images: [], history: [], memorySummary: "" }),
         signal: AbortSignal.timeout(180000)
       });
       payload = await response.json();
