@@ -81,21 +81,54 @@ function promptFor([platform, requirement, expected, signals]) {
   ].join("\n\n");
 }
 
-function extractFiles(answer) {
+function normaliseGeneration(data) {
+  const candidates = [
+    data && data.result, data && data.answer, data && data.response,
+    data && data.output, data && data.content, data && data.generated_text,
+    data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content,
+    data && data.data && (data.data.result || data.data.answer || data.data.response || data.data.content)
+  ];
+  const value = candidates.find(item => typeof item === "string" && item.trim());
+  if (value) return value;
+  const structured = [data && data.result, data && data.data, data].find(item => item && typeof item === "object" && Array.isArray(item.files));
+  if (structured) return structured.files.map(file => {
+    const filePath = String(file.path || file.name || "").trim();
+    const language = String(file.language || file.lang || filePath.split(".").pop() || "text");
+    return "```" + language + " " + filePath + "\\n" + String(file.content || file.code || "") + "\\n```";
+  }).join("\\n\\n") + "\\n\\n" + String(structured.summary || structured.message || "");
+  return "";
+}
+
+function extractFiles(answer, platform) {
   const files = [];
-  const re = /```([a-zA-Z0-9_+.-]+)[ \t]+([^\n`]+)\n([\s\S]*?)```/g;
+  const text = String(answer || "").replace(/\\r\\n/g, "\\n");
+  const re = /```([a-zA-Z0-9_+.#-]+)?[ \\t]*([^\\n`]*?)\\n([\\s\\S]*?)```/g;
+  const defaults = platform === "android"
+    ? { kotlin:"app/src/main/java/MainActivity.kt", kt:"app/src/main/java/MainActivity.kt", xml:"app/src/main/AndroidManifest.xml", gradle:"app/build.gradle.kts", "gradle.kts":"app/build.gradle.kts", properties:"gradle.properties" }
+    : platform === "fullstack"
+      ? { javascript:"server/index.js", js:"server/index.js", typescript:"server/index.ts", ts:"server/index.ts", json:"package.json", html:"client/index.html", css:"client/styles.css", sql:"database/schema.sql", python:"server/main.py" }
+      : { html:"index.html", css:"styles.css", javascript:"app.js", js:"app.js", json:"package.json" };
   let m;
-  while ((m = re.exec(answer))) {
-    const file = m[2].trim();
-    if (!file || file.startsWith("/") || file.split(/[\\/]/).includes("..")) continue;
-    files.push({ language: m[1].toLowerCase(), path: file, body: m[3].trim() });
+  while ((m = re.exec(text))) {
+    const language = String(m[1] || "text").toLowerCase();
+    let filePath = String(m[2] || "").trim().replace(/^[:*-]+\\s*/, "").replace(/^\\*\\*|\\*\\*$/g, "");
+    if (!filePath || filePath.startsWith("#") || filePath.length > 180 || filePath.includes(" ")) {
+      const previous = text.slice(0,m.index).trimEnd().split("\\n").pop() || "";
+      const heading = previous.match(/(?:^|\\s)([\\w./-]+\\.[a-zA-Z0-9]+)\\s*[:：]?\\s*$/);
+      filePath = heading ? heading[1] : "";
+    }
+    if (!filePath) filePath = defaults[language] || "";
+    if (!filePath || filePath.startsWith("/") || filePath.split(/[\\\\/]/).includes("..")) continue;
+    const body = m[3].replace(/^\\s*\\n/,"").trimEnd();
+    if (body.length < 8) continue;
+    files.push({ language, path:filePath, body });
   }
-  return files;
+  return files.filter((f,i,all)=>all.findIndex(x=>x.path===f.path)===i);
 }
 
 function scoreCase(test, response, body) {
   const checks = {};
-  const files = extractFiles(body);
+  const files = extractFiles(body, test[0]);
   const lower = body.toLowerCase();
   const paths = files.map(f => f.path.toLowerCase()).join(" ");
   checks.http_ok = response.ok;
@@ -144,12 +177,12 @@ async function main() {
         signal: AbortSignal.timeout(180000)
       });
       const data = await response.json();
-      body = String(data.result || data.answer || data.response || "");
+      body = normaliseGeneration(data);
       if (!response.ok) error = data.error || data.detail || "HTTP " + response.status;
       if (!body && response.ok) error = "Empty or unrecognised response payload";
     } catch (e) { error = e.message || String(e); }
     const score = scoreCase(test, response, body);
-    results.push({ id: i + 1, platform: test[0], requirement: test[1], status: response.status, durationMs: Date.now() - started, error, ...score });
+    results.push({ id: i + 1, platform: test[0], requirement: test[1], status: response.status, durationMs: Date.now() - started, error, responsePreview: body.slice(0, 1200), codeFenceCount: (body.match(/\`\`\`/g) || []).length, ...score });
     console.log("[" + (i + 1) + "/50] " + test[0] + " " + score.percent + "% " + (error ? "- " + error : ""));
     await new Promise(resolve => setTimeout(resolve, 1200));
   }
