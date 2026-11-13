@@ -37,8 +37,8 @@
 
   function extractFiles(answer, appType) {
     const files = [];
-    const text = String(answer || "").replace(/\\r\\n/g, "\\n");
-    const pattern = /```([a-zA-Z0-9_+.#-]+)?[ \\t]*([^\\n`]*?)\\n([\\s\\S]*?)```/g;
+    const text = String(answer || "").replace(/\r\n/g, "\n");
+    const pattern = /```([a-zA-Z0-9_+.#-]+)?[ \t]*([^\n`]*)\n([\s\S]*?)```/g;
     const defaults = appType === "android"
       ? { kotlin: "app/src/main/java/MainActivity.kt", kt: "app/src/main/java/MainActivity.kt", xml: "app/src/main/AndroidManifest.xml", gradle: "app/build.gradle.kts", "gradle.kts": "app/build.gradle.kts", properties: "gradle.properties", json: "app/src/main/assets/data.json" }
       : appType === "fullstack"
@@ -47,18 +47,18 @@
     let match;
     while ((match = pattern.exec(text))) {
       const language = String(match[1] || "text").toLowerCase();
-      let path = String(match[2] || "").trim().replace(/^[:*-]+\\s*/, "").replace(/^\\*\\*|\\*\\*$/g, "");
-      if (!path || path.startsWith("#") || path.length > 180 || path.includes(" ")) {
-        const before = text.slice(0, match.index).trimEnd().split("\\n").pop() || "";
-        const heading = before.match(/(?:^|\\s)([\\w./-]+\\.[a-zA-Z0-9]+)\\s*[:：]?\\s*$/);
-        path = heading ? heading[1] : "";
+      let filePath = String(match[2] || "").trim().replace(/^[:*-]+\s*/, "").replace(/^\*\*|\*\*$/g, "");
+      if (!filePath || filePath.startsWith("#") || filePath.length > 180 || filePath.includes(" ")) {
+        const before = text.slice(0, match.index).trimEnd().split("\n").pop() || "";
+        const heading = before.match(/(?:^|\s)([\w./-]+\.[a-zA-Z0-9]+)\s*[:：]?\s*$/);
+        filePath = heading ? heading[1] : "";
       }
-      if (!path) path = defaults[language] || "";
-      if (!path && language === "text") continue;
-      if (path.startsWith("/") || path.split(/[\\\\/]/).includes("..")) continue;
-      const body = match[3].replace(/^\\s*\\n/, "").replace(/\\s+$/, "");
-      if (body.length < 8) continue;
-      files.push({ language, path, content: body });
+      if (!filePath) filePath = defaults[language] || "";
+      if (!filePath && language === "text") continue;
+      if (filePath.startsWith("/") || filePath.split(/[\\/]/).includes("..")) continue;
+      const content = match[3].replace(/^\s*\n/, "").trimEnd();
+      if (content.length < 8) continue;
+      files.push({ language, path: filePath, content });
     }
     return files.filter((file, index, all) => all.findIndex(item => item.path === file.path) === index).slice(0, 60);
   }
