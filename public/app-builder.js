@@ -148,6 +148,7 @@
       "5. Include meaningful automated tests and exact local build/run commands. For Android include Gradle wrapper/build configuration and a complete project tree. If output limits are reached, prioritise runnable source files over lengthy explanation.",
       "6. Explain assumptions and limitations. Do not say code was compiled, tested, installed, or deployed unless the operation actually happened.",
       "7. End with a concise acceptance checklist mapping each user requirement to the file that implements it.",
+      "Engineering quality: return complete, coherent, runnable source code rather than a sketch. Validate inputs, handle failures, include meaningful tests and build/run steps. Never claim code was compiled or executed unless it actually was.",
       "Do not modify Ask.Me itself or claim repository changes. This is a separate generated project."
     ].join("\n\n");
     const controller = new AbortController();
@@ -161,8 +162,11 @@
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || data.detail || "App generation failed with HTTP " + response.status + ".");
-      const answer = String(data.result || data.answer || "");
-      if (!answer.trim()) throw new Error("The app builder received an empty response. Please retry.");
+      const answer = normaliseGeneration(data);
+      if (!answer.trim()) throw new Error("The app builder received an empty or unsupported generation response. Please retry.");
+      if (/deterministic evidence synthesis|generation services failed|no usable source text|independent research result/i.test(answer)) {
+        throw new Error("Application generation is currently unavailable: the service returned a research fallback instead of generated source code. No project files were created. Please retry after generation service recovery.");
+      }
       const files = extractFiles(answer, type);
       showFiles(files, answer);
       status.textContent = files.length
