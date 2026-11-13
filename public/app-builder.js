@@ -125,7 +125,7 @@
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || data.detail || "App generation failed with HTTP " + response.status + ".");
-      const answer = String(data.result || data.answer || "");
+      const answer = String(data.result || data.answer || data.response || "");
       if (!answer.trim()) throw new Error("The app builder received an empty response. Please retry.");
       const files = extractFiles(answer);
       showFiles(files, answer);
