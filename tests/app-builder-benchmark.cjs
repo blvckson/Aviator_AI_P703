@@ -94,8 +94,8 @@ function normaliseGeneration(data) {
   if (structured) return structured.files.map(file => {
     const filePath = String(file.path || file.name || "").trim();
     const language = String(file.language || file.lang || filePath.split(".").pop() || "text");
-    return "```" + language + " " + filePath + "\\n" + String(file.content || file.code || "") + "\\n```";
-  }).join("\\n\\n") + "\\n\\n" + String(structured.summary || structured.message || "");
+    return "```" + language + " " + filePath + "\n" + String(file.content || file.code || "") + "\\n```";
+  }).join("\n\n") + "\n\n" + String(structured.summary || structured.message || "");
   return "";
 }
 
