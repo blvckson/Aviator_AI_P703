@@ -41,7 +41,6 @@ const scenarios = [
   ["android","Kotlin library app with book catalogue, search and borrow status","settings.gradle.kts app/build.gradle.kts app/src/main/AndroidManifest.xml","Kotlin book search"],
   ["android","Kotlin appointment booking app with input validation and Room storage","settings.gradle.kts app/build.gradle.kts app/src/main/AndroidManifest.xml","Kotlin appointment Room"],
   ["android","Kotlin contact manager with add, edit, delete and search","settings.gradle.kts app/build.gradle.kts app/src/main/AndroidManifest.xml","Kotlin contact CRUD"],
-  ["android","Kotlin water tracker with daily target, progress and history","settings.gradle.kts app/build.gradle.kts app/src/main/AndroidManifest.xml","Kotlin water history"],
   ["android","Kotlin point-of-sale app with cart, quantity controls and receipt summary","settings.gradle.kts app/build.gradle.kts app/src/main/AndroidManifest.xml","Kotlin cart receipt"],
   ["android","Kotlin school timetable app with weekly schedule and reminders","settings.gradle.kts app/build.gradle.kts app/src/main/AndroidManifest.xml","Kotlin timetable"],
   ["android","Kotlin flashcard app with study decks, shuffle and progress","settings.gradle.kts app/build.gradle.kts app/src/main/AndroidManifest.xml","Kotlin flashcard"],
