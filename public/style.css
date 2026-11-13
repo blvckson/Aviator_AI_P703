@@ -44,3 +44,59 @@ button:disabled { opacity: .6; cursor: wait; }
 .attach-button:active { transform:scale(.96); }
 .file-status { font-size:13px; color:#60656b; }
 #preview { display:flex; flex-wrap:wrap; gap:6px; }
+
+
+/* Optional answer narration controls; retain the existing neutral Ask.Me palette. */
+.narrator-panel {
+    margin-top: 16px;
+    padding: 14px;
+    background: #f4f6f8;
+    border-radius: 8px;
+}
+.narrator-heading-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.narrator-heading-row strong { font-size: 15px; }
+.narrator-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 14px;
+}
+.narrator-toggle input { width: 18px; height: 18px; margin: 0; }
+.narrator-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 14px;
+}
+.narrator-controls label { margin-bottom: 6px; font-size: 13px; }
+.narrator-controls input[type="range"],
+.narrator-controls select {
+    width: 100%;
+    min-height: 38px;
+}
+.narrator-controls select {
+    padding: 8px;
+    border: 1px solid #bbb;
+    border-radius: 8px;
+    background: #fff;
+    color: #111;
+    font: inherit;
+}
+.narrator-panel .secondary-button {
+    display: inline-block;
+    width: auto;
+    margin-top: 10px;
+    padding: 9px 12px;
+    font-size: 14px;
+}
+.narrator-status { min-height: 18px; margin: 8px 0 0; font-size: 13px; color: #555; }
+@media (max-width: 520px) {
+    .narrator-controls { grid-template-columns: 1fr; }
+}

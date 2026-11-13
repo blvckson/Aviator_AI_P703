@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Aviator AI</title>
+  <title>Ask.Me</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -11,22 +11,43 @@
     <header>
       <div class="header-row">
         <div>
-          <h1>Aviator AI</h1>
-          <p>Deep reasoning, live research, screenshots, images and videos.</p>
+          <h1>Ask.Me</h1>
+          <p>Deep reasoning, live research, images, videos and documents.</p>
         </div>
-        <button id="narrator-settings-button" class="icon-button" type="button" aria-label="Narrator settings">🎙 Voice Clone</button>
+        <button id="narrator-settings-button" class="icon-button" type="button" aria-label="Open Ask.Me Voice Clone Studio" title="Open Ask.Me Voice Clone Studio">🎙 Voice Clone</button>
       </div>
       </header>
     <section class="card">
-      <label for="prompt">Ask Aviator AI anything</label>
-      <textarea id="prompt" rows="8" placeholder="Ask a complex question or attach a screenshot..."></textarea>
+      <label for="prompt">Message Ask.Me</label>
+      <textarea id="prompt" rows="8" placeholder="Ask a question or attach an image..."></textarea>
       <div class="chat-attachments">
         <button id="attach-button" class="attach-button" type="button" aria-label="Attach image or document" title="Attach image or document">＋</button>
         <input id="image-input" type="file" accept="image/*" multiple hidden>
         <span id="file-status" class="file-status">Attach an image or document</span>
       </div>
       <div id="preview"></div>
-      <button id="build-button" type="button">Ask Aviator AI</button>
+      <section class="narrator-panel" aria-labelledby="narrator-heading">
+        <div class="narrator-heading-row">
+          <strong id="narrator-heading">Answer narrator</strong>
+          <label class="narrator-toggle" for="narrator-enabled"><input id="narrator-enabled" type="checkbox"> Read answers aloud</label>
+        </div>
+        <div class="narrator-controls">
+          <div>
+            <label for="narrator-speed">Playback speed: <output id="narrator-speed-value">0.90×</output></label>
+            <input id="narrator-speed" type="range" min="0.30" max="1.50" step="0.05" value="0.90" aria-label="Narrator playback speed">
+          </div>
+          <div>
+            <label for="narrator-voice">System voice</label>
+            <select id="narrator-voice" aria-label="Narrator voice selection" aria-describedby="narrator-status">
+              <option value="">System default voice</option>
+            </select>
+          </div>
+        </div>
+        <button id="narrator-stop" class="secondary-button" type="button">Stop narration</button>
+        <p id="narrator-status" class="narrator-status" aria-live="polite">Narration is off. Answers appear normally.</p>
+        <p class="small">Narration uses speech voices available in your browser or device. Voice cloning is separate in Ask.Me Voice Studio.</p>
+      </section>
+      <button id="build-button" type="button">Ask</button>
       <div id="status" class="status" aria-live="polite"></div>
       <div id="result" aria-live="polite"></div>
       <div id="media"></div>
@@ -40,9 +61,9 @@
   <div id="narrator-modal" class="modal" hidden>
     <div class="modal-card voice-modal-card" role="dialog" aria-modal="true" aria-labelledby="narrator-title">
       <button id="narrator-close" class="modal-close" type="button" aria-label="Close">×</button>
-      <h2 id="narrator-title">Aviator AI Voice Clone</h2>
-      <p>Your voice-cloning studio runs locally inside the Aviator AI app. Voice samples are processed on this device; no commercial voice-cloning API is used.</p>
-      <iframe id="voice-studio-frame" title="Aviator AI local voice cloning studio" src="voice/index.html"></iframe>
+      <h2 id="narrator-title">Ask.Me Voice Clone Studio</h2>
+      <p>Record or upload a voice sample, save a voice, and generate speech in Ask.Me Voice Studio. Answer narration is a separate feature.</p>
+      <iframe id="voice-studio-frame" title="Ask.Me Voice Clone Studio" src="voice/index.html"></iframe>
     </div>
   </div>
 
