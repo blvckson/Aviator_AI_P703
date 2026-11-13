@@ -157,7 +157,7 @@
       const response = await fetch(API_BASE + "/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, images: [], history: [], memorySummary: "" }),
+        body: JSON.stringify({ mode: "app-builder", prompt, images: [], history: [], memorySummary: "" }),
         signal: controller.signal
       });
       const data = await response.json().catch(() => ({}));
