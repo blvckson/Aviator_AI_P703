@@ -69,3 +69,7 @@ test("builder uses the shared response normalizer in its live request path", () 
   assert.match(builder, /deterministic evidence synthesis|generation services failed/);
   assert.match(builder, /research fallback instead of generated source code/);
 });
+
+test("dedicated builder sends the App Builder mode to FreeApp-AI", () => {
+  assert.match(builder, /mode: "app-builder"/);
+});
