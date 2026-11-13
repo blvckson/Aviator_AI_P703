@@ -126,12 +126,15 @@ function extractFiles(answer, platform) {
   return files.filter((file,index,all)=>all.findIndex(item=>item.path===file.path)===index);
 }
 
-function scoreCase(test, response, body) {
+function scoreCase(test, response, body, payload = {}) {
   const checks = {};
   const files = extractFiles(body, test[0]);
   const lower = body.toLowerCase();
   const paths = files.map(f => f.path.toLowerCase()).join(" ");
   checks.http_ok = response.ok;
+  checks.workers_ai_provider = payload.modelProvider === "Cloudflare Workers AI";
+  checks.workers_ai_binding = payload.aiBindingConfigured === true;
+  checks.real_model_response = payload.modelIndependentFallback !== true && payload.responseMode === "language-model";
   checks.nonempty_response = body.trim().length >= 300;
   checks.multiple_complete_files = files.length >= (test[0] === "web" ? 2 : 3);
   checks.no_path_traversal = files.every(f => !f.path.startsWith("/") && !f.path.split(/[\\/]/).includes(".."));
@@ -168,6 +171,7 @@ async function main() {
     const started = Date.now();
     let response = { ok: false, status: 0 };
     let body = "";
+    let payload = {};
     let error = "";
     try {
       response = await fetch(ENDPOINT, {
@@ -176,13 +180,13 @@ async function main() {
         body: JSON.stringify({ prompt: promptFor(test), images: [], history: [], memorySummary: "" }),
         signal: AbortSignal.timeout(180000)
       });
-      const data = await response.json();
-      body = normaliseGeneration(data);
-      if (!response.ok) error = data.error || data.detail || "HTTP " + response.status;
+      payload = await response.json();
+      body = normaliseGeneration(payload);
+      if (!response.ok) error = payload.error || payload.detail || "HTTP " + response.status;
       if (!body && response.ok) error = "Empty or unrecognised response payload";
     } catch (e) { error = e.message || String(e); }
-    const score = scoreCase(test, response, body);
-    results.push({ id: i + 1, platform: test[0], requirement: test[1], status: response.status, durationMs: Date.now() - started, error, responsePreview: body.slice(0, 1200), provider: data && (data.modelProvider || data.provider || data.model) || "not-reported", aiBindingConfigured: data && typeof data.aiBindingConfigured === "boolean" ? data.aiBindingConfigured : null, codeFenceCount: (body.match(/\`\`\`/g) || []).length, ...score });
+    const score = scoreCase(test, response, body, payload);
+    results.push({ id: i + 1, platform: test[0], requirement: test[1], status: response.status, durationMs: Date.now() - started, error, responsePreview: body.slice(0, 1200), provider: payload && (payload.modelProvider || payload.provider || payload.model) || "not-reported", aiBindingConfigured: payload && typeof payload.aiBindingConfigured === "boolean" ? payload.aiBindingConfigured : null, codeFenceCount: (body.match(/\`\`\`/g) || []).length, ...score });
     console.log("[" + (i + 1) + "/50] " + test[0] + " " + score.percent + "% " + (error ? "- " + error : ""));
     await new Promise(resolve => setTimeout(resolve, 1200));
   }
