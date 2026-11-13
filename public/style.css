@@ -80,3 +80,25 @@ button:disabled { opacity: .6; cursor: wait; }
 .attach-button { display:flex; align-items:center; justify-content:center; flex:0 0 44px; width:44px; height:44px; margin:0; padding:0; border:1px solid #c8cdd3; border-radius:50%; background:#f1f3f5; color:#202124; font-size:30px; font-weight:400; line-height:1; cursor:pointer; }
 .attach-button:active { transform:scale(.96); }
 .file-status { font-size:13px; color:#60656b; }
+
+/* Isolated App Builder: uses the existing Ask.Me palette and does not alter chat/voice/GitHub behaviour. */
+.app-builder-card { margin-top:18px; }
+.app-builder-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+.app-builder-heading h2 { margin:0 0 6px; }
+.app-builder-heading p { margin:0 0 14px; color:#555; line-height:1.45; }
+.builder-badge { flex:0 0 auto; padding:6px 9px; border:1px solid #c8cdd3; border-radius:20px; font-size:11px; font-weight:bold; letter-spacing:.04em; }
+.app-builder-card select, .app-builder-card textarea { width:100%; padding:12px; margin:6px 0 14px; border:1px solid #bbb; border-radius:8px; font:inherit; background:#fff; color:#111; }
+.app-builder-card textarea { min-height:130px; }
+.app-builder-controls { display:flex; gap:9px; }
+.app-builder-controls button { margin:0; }
+.app-builder-controls .secondary-button { flex:0 0 100px; }
+.app-builder-output { margin-top:14px; padding:14px; border-radius:10px; background:#f4f6f8; }
+.app-builder-files-heading { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+.app-builder-file { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px; margin:8px 0; background:#fff; border:1px solid #d8dee6; border-radius:8px; overflow-wrap:anywhere; }
+.app-builder-file button { width:auto; margin:0; padding:8px 12px; font-size:13px; }
+.app-builder-file-name { font-family:monospace; font-size:13px; }
+#app-builder-preview { display:block; width:100%; height:420px; border:1px solid #c8cdd3; border-radius:8px; background:#fff; }
+.app-builder-response { margin-top:12px; }
+.app-builder-response pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }
+.app-builder-file code { overflow-wrap:anywhere; }
+@media(max-width:520px) { .app-builder-heading { flex-direction:column; } .app-builder-controls { flex-direction:column; } .app-builder-controls .secondary-button { flex:auto; } #app-builder-preview { height:340px; } }

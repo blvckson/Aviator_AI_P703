@@ -59,6 +59,36 @@
         <ul id="source-list"></ul>
       </div>
     </section>
+
+    <section class="card app-builder-card" id="app-builder">
+      <div class="app-builder-heading">
+        <div><h2>App Builder</h2><p>Turn an idea into a working app project. Generate files, preview web apps, and download the source.</p></div>
+        <span class="builder-badge">BUILD MODE</span>
+      </div>
+      <label for="app-builder-platform">App type</label>
+      <select id="app-builder-platform">
+        <option value="web">Web app (HTML, CSS and JavaScript)</option>
+        <option value="android">Android app (Kotlin / Gradle)</option>
+        <option value="fullstack">Full-stack web app</option>
+      </select>
+      <label for="app-builder-spec">Describe the app you want built</label>
+      <textarea id="app-builder-spec" rows="6" placeholder="Describe what the app should do, its screens, features, users, data storage, and design. Example: Build an offline inventory app with stock-in/out, low-stock alerts and CSV export."></textarea>
+      <div class="app-builder-controls">
+        <button id="app-builder-run" type="button">⚒ Build my app</button>
+        <button id="app-builder-clear" class="secondary-button" type="button">Clear</button>
+      </div>
+      <div id="app-builder-status" class="status" aria-live="polite">Ready. This builder is separate from the normal Ask.Me conversation.</div>
+      <div id="app-builder-output" class="app-builder-output" aria-live="polite" hidden>
+        <div class="app-builder-files-heading"><strong>Generated project files</strong><span id="app-builder-file-count"></span></div>
+        <div id="app-builder-files"></div>
+        <div id="app-builder-preview-wrap" hidden>
+          <h3>Live preview</h3>
+          <iframe id="app-builder-preview" title="Generated app preview" sandbox="allow-scripts"></iframe>
+        </div>
+        <details class="app-builder-response"><summary>View complete build notes and instructions</summary><pre id="app-builder-notes"></pre></details>
+      </div>
+    </section>
+
     <section class="card github-agent-card" id="github-agent">
       <h2>GitHub Engineering Agent</h2>
       <p>Ask.Me can inspect a selected repository, prepare code changes, commit them to a new branch, open a pull request, run builds, inspect failed checks, and prepare repairs.</p>
@@ -99,6 +129,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.9.0/mammoth.browser.min.js"></script>
   <script src="app.js"></script>
+  <script src="app-builder.js"></script>
   <script src="coding-agent-guard.js"></script>
   <script src="github-agent.js"></script>
 </body>
