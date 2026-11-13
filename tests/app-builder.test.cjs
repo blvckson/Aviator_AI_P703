@@ -48,3 +48,18 @@ test("builder has request timeout, input bounds, and never touches GitHub or cha
   assert.match(builder, /setTimeout\(\(\) => controller\.abort\(\), 180000\)/);
   assert.doesNotMatch(builder, /github-token|github-agent|localStorage|AskMeNativeTTS|speechSynthesis/);
 });
+
+test("builder normalises common text and structured generation response shapes", () => {
+  assert.match(builder, /function normaliseGeneration\(data\)/);
+  assert.match(builder, /data\.choices && data\.choices\[0\]/);
+  assert.match(builder, /Array\.isArray\(item\.files\)/);
+  assert.match(builder, /data && data\.output/);
+});
+
+test("builder can recover files when the model omits paths after language fences", () => {
+  assert.match(builder, /function extractFiles\(answer, appType\)/);
+  assert.match(builder, /defaults\[language\]/);
+  assert.match(builder, /app\/src\/main\/AndroidManifest\.xml/);
+  assert.match(builder, /client\/index\.html/);
+  assert.match(builder, /response-first output|SOURCE-FIRST OUTPUT/);
+});
