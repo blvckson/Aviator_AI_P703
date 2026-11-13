@@ -31,7 +31,8 @@ test("builder requests complete multi-file source, tests and honest build status
 test("builder extracts safe labelled files and offers downloads", () => {
   assert.match(builder, /function extractFiles\(answer, appType\)/);
   assert.match(builder, /filePath\.startsWith\("\/"\)/);
-  assert.match(builder, /split\(\/[\\\\/]\/\)/);
+  assert.match(builder, /filePath\.split/);
+  assert.match(builder, /includes\("\.\."\)/);
   assert.match(builder, /function downloadFile\(file\)/);
   assert.match(builder, /link\.download/);
 });
