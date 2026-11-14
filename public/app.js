@@ -524,3 +524,101 @@ function toDataUrl(file) {
     reader.readAsDataURL(file);
   });
 }
+
+
+// Persistent, revisitable chat sessions stored locally on this device.
+(function installPersistentChatHistory() {
+  const KEY = "askme_chat_history_v1";
+  const list = document.getElementById("chat-history-list");
+  const newButton = document.getElementById("new-chat-button");
+  if (!list || !chatMessages) return;
+  let sessions = [];
+  let activeId = "";
+  let hydrating = false;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(KEY) || "[]");
+    if (Array.isArray(parsed)) sessions = parsed.filter(s => s && typeof s.id === "string" && Array.isArray(s.messages));
+  } catch (_) {}
+  const makeId = () => "chat-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+  const active = () => sessions.find(s => s.id === activeId);
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(sessions.slice(-100))); }
+    catch (_) { if (statusBox) statusBox.textContent = "Chat history storage is full; some older chats may not be saved."; }
+  }
+  function renderList() {
+    list.replaceChildren();
+    const ordered = [...sessions].sort((a,b) => b.updatedAt - a.updatedAt);
+    if (!ordered.length) {
+      const empty = document.createElement("span"); empty.className = "history-empty";
+      empty.textContent = "Your saved chats will appear here."; list.appendChild(empty); return;
+    }
+    ordered.forEach(session => {
+      const button = document.createElement("button");
+      button.type = "button"; button.className = "history-item" + (session.id === activeId ? " active" : "");
+      button.textContent = session.title || "New conversation";
+      button.addEventListener("click", () => openSession(session.id));
+      list.appendChild(button);
+    });
+  }
+  function snapshot() {
+    const session = active(); if (!session || hydrating) return;
+    session.messages = Array.from(chatMessages.querySelectorAll(".chat-message")).map(node => ({
+      role: node.classList.contains("chat-user") ? "user" : "assistant",
+      text: node.textContent || ""
+    }));
+    const first = session.messages.find(m => m.role === "user");
+    session.title = (first ? first.text : "New conversation").replace(/\s+/g, " ").slice(0, 58) || "New conversation";
+    session.updatedAt = Date.now(); save(); renderList();
+  }
+  function openSession(id) {
+    const session = sessions.find(s => s.id === id); if (!session) return;
+    activeId = id; hydrating = true; chatMessages.replaceChildren();
+    session.messages.forEach(message => {
+      const bubble = document.createElement("div");
+      bubble.className = "chat-message " + (message.role === "user" ? "chat-user" : "chat-assistant");
+      bubble.textContent = message.text; chatMessages.appendChild(bubble);
+    });
+    if (!session.messages.length) {
+      const empty = document.createElement("div"); empty.className = "chat-empty";
+      empty.textContent = "Your conversation will appear here."; chatMessages.appendChild(empty);
+    }
+    hydrating = false; chatMessages.scrollTop = chatMessages.scrollHeight;
+    if (resultBox) resultBox.textContent = "";
+    if (mediaBox) mediaBox.replaceChildren();
+    if (sourceList) sourceList.replaceChildren();
+    if (sourcesBox) sourcesBox.hidden = true;
+    const last = [...session.messages].reverse().find(m => m.role === "assistant" && m.text && m.text !== "Thinking…");
+    lastAnswer = last ? last.text : "";
+    if (narratorButton) narratorButton.disabled = !lastAnswer;
+    renderList();
+  }
+  function newSession() {
+    activeId = makeId();
+    sessions.push({id:activeId,title:"New conversation",updatedAt:Date.now(),messages:[]});
+    hydrating = true; chatMessages.replaceChildren();
+    const empty = document.createElement("div"); empty.className = "chat-empty";
+    empty.textContent = "Your conversation will appear here."; chatMessages.appendChild(empty);
+    hydrating = false;
+    if (resultBox) resultBox.textContent = "";
+    if (mediaBox) mediaBox.replaceChildren();
+    if (sourceList) sourceList.replaceChildren();
+    if (sourcesBox) sourcesBox.hidden = true;
+    lastAnswer = ""; if (narratorButton) narratorButton.disabled = true;
+    save(); renderList(); if (promptBox) promptBox.focus();
+  }
+  const originalAppend = appendChatMessage;
+  appendChatMessage = function(role, text) {
+    if (!active()) {
+      activeId = makeId(); sessions.push({id:activeId,title:"New conversation",updatedAt:Date.now(),messages:[]});
+    }
+    const bubble = originalAppend(role, text);
+    if (!hydrating) snapshot();
+    return bubble;
+  };
+  const observer = new MutationObserver(() => { if (!hydrating) snapshot(); });
+  observer.observe(chatMessages, {subtree:true,childList:true,characterData:true});
+  if (newButton) newButton.addEventListener("click", newSession);
+  renderList();
+  if (sessions.length) openSession([...sessions].sort((a,b) => b.updatedAt - a.updatedAt)[0].id);
+  else newSession();
+})();
