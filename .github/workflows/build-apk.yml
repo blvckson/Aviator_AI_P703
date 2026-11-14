@@ -1,4 +1,4 @@
-name: Build Aviator AI APK
+name: Build Ask.Me APK
 
 on:
   pull_request:
@@ -17,14 +17,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify OCR, narrator, and voice-studio JavaScript
-        shell: bash
+      - name: Validate frontend syntax and regression tests
         run: |
-          set -euo pipefail
-          node --test tests/*.test.cjs
           node --check public/app.js
+          node --check public/github-agent.js
+          node --check public/coding-agent-guard.js
           node --check public/voice/app.js
           node --check public/voice/inference-worker.js
+          node --test tests/*.test.cjs
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -54,23 +54,17 @@ jobs:
             curl -fL --retry 3 -o "$MODEL_DIR/$f" "$BASE/$f"
           done
 
-          for required in \
-            "$VOICE_DIR/index.html" \
-            "$VOICE_DIR/app.js" \
-            "$VOICE_DIR/inference-worker.js" \
-            "$VOICE_DIR/sentencepiece.js" \
-            "$ORT_DIR/ort.min.js" \
-            "$ORT_DIR/ort-wasm.wasm" \
-            "$MODEL_DIR/bundle.json" \
-            "$MODEL_DIR/tokenizer.model" \
-            "$MODEL_DIR/bos_before_voice.npy" \
-            "$MODEL_DIR/mimi_encoder_int8.onnx" \
-            "$MODEL_DIR/text_conditioner_int8.onnx" \
-            "$MODEL_DIR/flow_lm_main_int8.onnx" \
-            "$MODEL_DIR/flow_lm_flow_int8.onnx" \
-            "$MODEL_DIR/mimi_decoder_int8.onnx"; do
-            test -s "$required" || { echo "Missing or empty voice asset: $required"; exit 1; }
+          test -s "$VOICE_DIR/index.html"
+          test -s "$VOICE_DIR/app.js"
+          test -s "$VOICE_DIR/inference-worker.js"
+          test -s "$VOICE_DIR/PCMPlayerWorklet.js"
+          test -s "$VOICE_DIR/sentencepiece.js"
+          test -s "$ORT_DIR/ort.min.js"
+          test -s "$ORT_DIR/ort-wasm.wasm"
+          for f in bundle.json tokenizer.model bos_before_voice.npy mimi_encoder_int8.onnx text_conditioner_int8.onnx flow_lm_main_int8.onnx flow_lm_flow_int8.onnx mimi_decoder_int8.onnx; do
+            test -s "$MODEL_DIR/$f" || { echo "Missing or empty voice model asset: $f"; exit 1; }
           done
+          echo "Voice cloning studio and all required model/runtime assets are present."
           du -sh "$VOICE_DIR"
 
       - name: Set up Gradle
@@ -84,25 +78,18 @@ jobs:
       - name: Build APK
         run: gradle assembleDebug --no-daemon
 
-      - name: Prepare APK A and APK B
+      - name: Verify single APK output
         shell: bash
         run: |
           set -euo pipefail
           APK="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
-          mkdir -p app/build/outputs/formats
-          cp "$APK" app/build/outputs/formats/Aviator_AI_P703_Format_A.apk
-          cp "$APK" app/build/outputs/formats/Aviator_AI_P703_Format_B.apk
-          ls -lh app/build/outputs/formats/*.apk
+          echo "Built exactly one APK:"
+          ls -lh "$APK"
 
-      - name: Upload APK A
+      - name: Upload single Ask.Me APK
         uses: actions/upload-artifact@v4
         with:
-          name: Aviator_AI_P703_Format_A
-          path: app/build/outputs/formats/Aviator_AI_P703_Format_A.apk
-
-      - name: Upload APK B
-        uses: actions/upload-artifact@v4
-        with:
-          name: Aviator_AI_P703_Format_B
-          path: app/build/outputs/formats/Aviator_AI_P703_Format_B.apk
+          name: AskMe_P703_APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

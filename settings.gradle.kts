@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "AviatorAI"
+rootProject.name = "AskMeAI"
 include(":app")

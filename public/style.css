@@ -38,9 +38,57 @@ button:disabled { opacity: .6; cursor: wait; }
 .secondary-button { background:#666; }
 
 
-/* ChatGPT-style attachment control: file input stays hidden behind the plus button. */
+.header-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+.narrator-controls { margin-top:16px; padding:14px; border:1px solid #d8dee6; border-radius:10px; background:#fafbfd; }
+.narrator-heading { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+#narrator-speed { display:block; width:100%; margin:8px 0 12px; accent-color:#111; }
+.narrator-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.auto-read { display:flex; align-items:center; gap:8px; margin:0; font-weight:normal; }
+.auto-read input { width:18px; height:18px; }
+.narrator-actions .secondary-button { width:auto; margin:0; padding:9px 14px; font-size:14px; }
+@media (max-width:520px) {
+  .header-row { flex-direction:column; }
+  .header-actions { width:100%; justify-content:stretch; }
+  .header-actions button { flex:1; }
+}
+
+
+.github-agent-card { margin-top:18px; }
+.github-agent-card h2 { margin:0 0 8px; }
+.github-agent-card input, .github-agent-card select, .github-agent-card textarea {
+  width:100%; padding:12px; margin:6px 0 14px; border:1px solid #bbb; border-radius:8px; font:inherit;
+}
+.github-agent-card .small { font-size:13px; line-height:1.5; color:#555; }
+.github-agent-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; align-items:end; }
+.github-agent-actions label { grid-column:1/-1; margin:0; }
+.github-agent-actions select { grid-column:1/-1; }
+.github-agent-actions button { margin:0; padding:11px 8px; font-size:14px; }
+.github-agent-result { white-space:pre-wrap; overflow-wrap:anywhere; max-height:420px; overflow:auto; background:#f4f6f8; border-radius:8px; padding:12px; font-size:12px; }
+@media (max-width:520px) {
+  .github-agent-actions { grid-template-columns:1fr; }
+  .github-agent-actions label, .github-agent-actions select { grid-column:1; }
+}
+
+/* Conversation bubbles use the existing palette; no theme colours are changed. */
+.chat-messages { display:flex; flex-direction:column; gap:10px; max-height:420px; overflow-y:auto; padding:12px; margin:0 0 16px; background:#f4f6f8; border-radius:10px; }
+.chat-message { max-width:88%; padding:11px 14px; border-radius:14px; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.45; }
+.chat-user { align-self:flex-end; background:#e8eef5; border-bottom-right-radius:4px; }
+.chat-assistant { align-self:flex-start; background:#fff; border:1px solid #e1e5ea; border-bottom-left-radius:4px; }
+.chat-empty { color:#666; font-size:13px; text-align:center; padding:12px; }
+
 .chat-attachments { display:flex; align-items:center; gap:10px; margin-top:8px; min-height:44px; }
 .attach-button { display:flex; align-items:center; justify-content:center; flex:0 0 44px; width:44px; height:44px; margin:0; padding:0; border:1px solid #c8cdd3; border-radius:50%; background:#f1f3f5; color:#202124; font-size:30px; font-weight:400; line-height:1; cursor:pointer; }
 .attach-button:active { transform:scale(.96); }
 .file-status { font-size:13px; color:#60656b; }
-#preview { display:flex; flex-wrap:wrap; gap:6px; }
+
+/* Saved conversation navigation and relevant media cards */
+.history-panel { margin:0 0 14px; padding:12px; border:1px solid #e0e5eb; border-radius:10px; background:#fafbfd; }
+.history-heading { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px; }
+.history-heading button { width:auto; margin:0; padding:8px 12px; font-size:13px; }
+.chat-history-list { display:flex; flex-direction:column; gap:6px; max-height:170px; overflow-y:auto; }
+.history-item { width:100%; margin:0; padding:9px 11px; text-align:left; font-size:13px; font-weight:normal; background:#fff; color:#222; border:1px solid #e1e5ea; }
+.history-item.active { border-color:#555; background:#eef1f5; font-weight:bold; }
+.history-empty { color:#666; font-size:12px; padding:6px; }
+.media-card { margin:10px 0; padding:10px; border:1px solid #e1e5ea; border-radius:9px; background:#fff; }
+.media-card img { display:block; max-width:100%; max-height:280px; object-fit:contain; border-radius:6px; }
+.media-card a, #source-list a { color:#164f91; overflow-wrap:anywhere; }
