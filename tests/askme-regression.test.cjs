@@ -124,3 +124,8 @@ test("native narrator waits for Android TTS initialization and supports 0.30x sp
   assert.match(activity, /Math\.max\(0\.30f/);
   assert.match(html, /min="0\.30" max="1\.50"/);
 });
+
+
+test("plus menu contains image/screenshot, audio, video and document inputs",()=>{assert.match(html,/class="attach-menu"/);assert.match(html,/id="audio-input"[^>]*accept="audio\\/\\*"/);assert.match(app,/selectedAudio/);assert.match(app,/audio, ocrText/);});
+test("secondary functions are moved under a three-dot overflow menu",()=>{assert.match(html,/class="more-menu"/);assert.match(app,/setupOverflowMenu/);});
+test("request deadline covers preprocessing and unlocks submit on timeout",()=>{assert.match(app,/exceeded the 2-minute limit/);assert.match(app,/clearTimeout\(timeoutId\)/);});
