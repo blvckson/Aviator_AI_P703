@@ -22,16 +22,17 @@ test("builder supports web, Android and full-stack project types", () => {
 });
 
 test("builder requests complete multi-file source, tests and honest build status", () => {
-  assert.match(builder, /complete, production-minded source files/);
+  assert.match(builder, /SOURCE-FIRST OUTPUT/);
   assert.match(builder, /automated tests and exact local build\/run commands/);
   assert.match(builder, /Never claim a build passed unless it was actually built/);
   assert.match(builder, /Do not say code was compiled, tested, installed, or deployed unless the operation actually happened/);
 });
 
 test("builder extracts safe labelled files and offers downloads", () => {
-  assert.match(builder, /function extractFiles\(answer\)/);
-  assert.match(builder, /path\.startsWith\("\/"\)/);
-  assert.match(builder, /split\(\/[\\\\/]\/\)/);
+  assert.match(builder, /function extractFiles\(answer, appType\)/);
+  assert.match(builder, /filePath\.startsWith\("\/"\)/);
+  assert.match(builder, /filePath\.split/);
+  assert.match(builder, /includes\("\.\."\)/);
   assert.match(builder, /function downloadFile\(file\)/);
   assert.match(builder, /link\.download/);
 });
@@ -47,4 +48,37 @@ test("builder has request timeout, input bounds, and never touches GitHub or cha
   assert.match(builder, /description\.length > 12000/);
   assert.match(builder, /setTimeout\(\(\) => controller\.abort\(\), 180000\)/);
   assert.doesNotMatch(builder, /github-token|github-agent|localStorage|AskMeNativeTTS|speechSynthesis/);
+});
+
+test("builder normalises common text and structured generation response shapes", () => {
+  assert.match(builder, /function normaliseGeneration\(data\)/);
+  assert.match(builder, /data\.choices && data\.choices\[0\]/);
+  assert.match(builder, /Array\.isArray\(item\.files\)/);
+  assert.match(builder, /data && data\.output/);
+});
+
+test("builder can recover files when the model omits paths after language fences", () => {
+  assert.match(builder, /function extractFiles\(answer, appType\)/);
+  assert.match(builder, /defaults\[language\]/);
+  assert.match(builder, /app\/src\/main\/AndroidManifest\.xml/);
+  assert.match(builder, /client\/index\.html/);
+  assert.match(builder, /response-first output|SOURCE-FIRST OUTPUT/);
+});
+
+test("builder uses the shared response normalizer in its live request path", () => {
+  assert.match(builder, /const answer = normaliseGeneration\(data\)/);
+  assert.match(builder, /deterministic evidence synthesis|generation services failed/);
+  assert.match(builder, /research fallback instead of generated source code/);
+});
+
+test("dedicated builder sends the App Builder mode to FreeApp-AI", () => {
+  assert.match(builder, /mode: "app-builder"/);
+});
+
+
+test("live benchmark explicitly enforces Workers-AI-only routing and rejects fallback providers", () => {
+  assert.match(fs.readFileSync("tests/app-builder-benchmark.cjs", "utf8"), /providerPolicy: "workers-ai-only"/);
+  assert.match(fs.readFileSync("tests/app-builder-benchmark.cjs", "utf8"), /checks\.workers_ai_policy = payload\.providerPolicy === "workers-ai-only"/);
+  assert.match(fs.readFileSync("tests/app-builder-benchmark.cjs", "utf8"), /checks\.workers_ai_provider = payload\.modelProvider === "Cloudflare Workers AI"/);
+  assert.match(fs.readFileSync("tests/app-builder-benchmark.cjs", "utf8"), /checks\.workers_ai_model_reported/);
 });

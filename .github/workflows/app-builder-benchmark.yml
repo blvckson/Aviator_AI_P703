@@ -1,18 +1,35 @@
-name: Ask.Me App Builder 50-case benchmark
+name: Ask.Me App Builder 50-case Workers-AI-only benchmark
 
 on:
   workflow_dispatch:
   pull_request:
     paths:
-      - "public/app-builder.js"
       - "tests/app-builder-benchmark.cjs"
+      - "tests/app-builder.test.cjs"
       - ".github/workflows/app-builder-benchmark.yml"
 
 permissions:
   contents: read
 
 jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Validate App Builder JavaScript and regression tests
+        run: |
+          node --check public/app-builder.js
+          node --check tests/app-builder-benchmark.cjs
+          node --test tests/app-builder.test.cjs
+
   live-app-builder-benchmark:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
@@ -22,9 +39,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Validate benchmark syntax
-        run: node --check tests/app-builder-benchmark.cjs
-      - name: Run 50 live generation cases without API token
+      - name: Validate App Builder JavaScript and regression tests
+        run: |
+          node --check public/app-builder.js
+          node --check tests/app-builder-benchmark.cjs
+          node --test tests/app-builder.test.cjs
+      - name: Run 50 live Workers-AI-only generation cases (no API token)
         run: node tests/app-builder-benchmark.cjs --live
       - name: Upload benchmark report
         if: always()
