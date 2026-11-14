@@ -134,6 +134,8 @@ function scoreCase(test, response, body, payload = {}) {
   checks.http_ok = response.ok;
   checks.workers_ai_provider = payload.modelProvider === "Cloudflare Workers AI";
   checks.workers_ai_binding = payload.aiBindingConfigured === true;
+  checks.workers_ai_policy = payload.providerPolicy === "workers-ai-only";
+  checks.workers_ai_model_reported = typeof payload.modelName === "string" && payload.modelName.length > 0;
   checks.real_model_response = payload.modelIndependentFallback !== true && payload.responseMode === "language-model";
   checks.nonempty_response = body.trim().length >= 300;
   checks.multiple_complete_files = files.length >= (test[0] === "web" ? 2 : 3);
@@ -177,7 +179,7 @@ async function main() {
       response = await fetch(ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "app-builder", prompt: promptFor(test), images: [], history: [], memorySummary: "" }),
+        body: JSON.stringify({ mode: "app-builder", providerPolicy: "workers-ai-only", prompt: promptFor(test), images: [], history: [], memorySummary: "" }),
         signal: AbortSignal.timeout(180000)
       });
       payload = await response.json();
@@ -186,7 +188,7 @@ async function main() {
       if (!body && response.ok) error = "Empty or unrecognised response payload";
     } catch (e) { error = e.message || String(e); }
     const score = scoreCase(test, response, body, payload);
-    results.push({ id: i + 1, platform: test[0], requirement: test[1], status: response.status, durationMs: Date.now() - started, error, responsePreview: body.slice(0, 1200), provider: payload && (payload.modelProvider || payload.provider || payload.model) || "not-reported", aiBindingConfigured: payload && typeof payload.aiBindingConfigured === "boolean" ? payload.aiBindingConfigured : null, codeFenceCount: (body.match(/\`\`\`/g) || []).length, ...score });
+    results.push({ id: i + 1, platform: test[0], requirement: test[1], status: response.status, durationMs: Date.now() - started, error, responsePreview: body.slice(0, 1200), provider: payload && (payload.modelProvider || payload.provider || payload.model) || "not-reported", providerPolicy: payload && payload.providerPolicy || "not-reported", modelName: payload && payload.modelName || null, aiBindingConfigured: payload && typeof payload.aiBindingConfigured === "boolean" ? payload.aiBindingConfigured : null, codeFenceCount: (body.match(/\`\`\`/g) || []).length, ...score });
     console.log("[" + (i + 1) + "/50] " + test[0] + " " + score.percent + "% " + (error ? "- " + error : ""));
     await new Promise(resolve => setTimeout(resolve, 1200));
   }
@@ -198,7 +200,10 @@ async function main() {
     byPlatform[platform] = { cases: group.length, percent: Math.round(100 * group.reduce((n, r) => n + r.passed, 0) / group.reduce((n, r) => n + r.total, 0)) };
   }
   const report = {
-    benchmark: "Ask.Me App Builder 50-case live benchmark",
+    benchmark: "Ask.Me App Builder 50-case Workers-AI-only live benchmark",
+    providerPolicy: "workers-ai-only",
+    acceptedProvider: "Cloudflare Workers AI",
+    fallbackProvidersAllowed: false,
     generatedAt: new Date().toISOString(),
     endpoint: ENDPOINT,
     authentication: "No bearer/API token supplied by this benchmark",
