@@ -5,6 +5,7 @@ const promptBox = byId("prompt");
 const imageInput = byId("image-input");
 const fileInput = byId("file-input");
 const videoInput = byId("video-input");
+const audioInput = byId("audio-input");
 const videoFileStatus = byId("video-file-status");
 const docFileStatus = byId("doc-file-status");
 const fileStatus = byId("file-status");
@@ -36,6 +37,7 @@ const DEFAULT_NARRATOR_RATE = 0.90;
 let selectedImages = [];
 let selectedDocs = [];
 let selectedVideos = [];
+let selectedAudio = [];
 let lastAnswer = "";
 let speechQueue = [];
 let speaking = false;
@@ -237,7 +239,19 @@ if (videoInput) videoInput.addEventListener("change", () => {
   selectedVideos = Array.from(videoInput.files || []).filter(file => file.type.startsWith("video/")).slice(0, 2);
   if (videoFileStatus) videoFileStatus.textContent = selectedVideos.length ? selectedVideos.length + " video(s) selected (maximum 2)" : "No video selected";
 });
+if (audioInput) audioInput.addEventListener("change", () => {
+  selectedAudio = Array.from(audioInput.files || []).filter(file => file.type.startsWith("audio/")).slice(0, 2);
+  if (fileStatus) fileStatus.textContent = selectedImages.length + " image(s) · " + selectedAudio.length + " audio file(s) selected";
+});
 if (buildButton) buildButton.addEventListener("click", askAI);
+
+(function setupOverflowMenu() {
+  const panel = byId("more-menu-panel");
+  if (!panel) return;
+  for (const element of [document.querySelector(".header-actions"), document.querySelector(".narrator-controls"), byId("github-agent")]) {
+    if (element) panel.appendChild(element);
+  }
+})();
 
 function buildQualityPrompt(userPrompt) {
   const rules = [];
@@ -263,7 +277,7 @@ function buildQualityPrompt(userPrompt) {
 
 async function askAI() {
   const prompt = String(promptBox && promptBox.value || "").trim();
-  if (!prompt && !selectedImages.length && !selectedDocs.length && !selectedVideos.length) {
+  if (!prompt && !selectedImages.length && !selectedDocs.length && !selectedVideos.length && !selectedAudio.length) {
     statusBox.textContent = "Enter a question or attach an image first.";
     return;
   }
@@ -282,7 +296,7 @@ async function askAI() {
 
   const userBubble = appendChatMessage("user", prompt || "Please analyze the attached media and files.");
   const assistantBubble = appendChatMessage("assistant", "Thinking…");
-  const greeting = !selectedImages.length && !selectedDocs.length && !selectedVideos.length && /^(hi|hlo|hello|hey|good morning|good afternoon|good evening|how are you)[!.,\s]*$/i.test(prompt);
+  const greeting = !selectedImages.length && !selectedDocs.length && !selectedVideos.length && !selectedAudio.length && /^(hi|hlo|hello|hey|good morning|good afternoon|good evening|how are you)[!.,\s]*$/i.test(prompt);
   if (greeting) {
     const greetingAnswer = "Hello! How can I help you today?";
     lastAnswer = greetingAnswer; resultBox.textContent = greetingAnswer;
@@ -291,10 +305,18 @@ async function askAI() {
     buildButton.disabled = false; return;
   }
   const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-  const timeoutId = controller ? setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS) : null;
+  const timeoutId = setTimeout(() => {
+    if (controller) controller.abort();
+    statusBox.textContent = "This request exceeded the 2-minute limit. You can retry now.";
+    resultBox.textContent = "Ask.Me stopped waiting so the chat cannot remain stuck indefinitely.";
+    assistantBubble.textContent = "Request timed out. Please retry with a shorter request or fewer attachments.";
+    buildButton.disabled = false;
+  }, REQUEST_TIMEOUT_MS);
   try {
     const images = [];
+    const audio = [];
     for (const file of selectedImages) images.push(await toDataUrl(file));
+    for (const file of selectedAudio) audio.push({ name: file.name, type: file.type, data: await toDataUrl(file) });
     for (const file of selectedVideos) images.push(...await extractVideoFrames(file));
     const ocrText = await extractLocalOcr(selectedImages);
     const documentParts = [];
@@ -302,14 +324,14 @@ async function askAI() {
       const content = await toText(file);
       documentParts.push("--- ATTACHED FILE: " + file.name + " ---\n" + content);
     }
-    const effectivePrompt = [prompt || (images.length ? "Please analyze the attached images and sampled video frames." : ""), ...documentParts, ...(ocrText ? ["Text extracted from attached images:\n" + ocrText] : []), ...selectedVideos.map(file => "Attached video: " + file.name + ". Images include sampled video frames.")].filter(Boolean).join("\n\n");
+    const effectivePrompt = [prompt || (images.length ? "Please analyze the attached images and sampled video frames." : (audio.length ? "Please analyze/transcribe the attached audio." : "")), ...documentParts, ...(ocrText ? ["Text extracted from attached images:\n" + ocrText] : []), ...selectedVideos.map(file => "Attached video: " + file.name + ". Images include sampled video frames."), ...selectedAudio.map(file => "Attached audio: " + file.name + " (" + file.type + ").")].filter(Boolean).join("\n\n");
     if (effectivePrompt.length > MAX_PROMPT_CHARS) {
       throw new Error("The question and attached text exceed " + MAX_PROMPT_CHARS + " characters. Attach fewer or shorter files.");
     }
     const response = await fetch(API_BASE + "/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: buildQualityPrompt(effectivePrompt), images, ocrText, history: [], memorySummary: "" }),
+      body: JSON.stringify({ prompt: buildQualityPrompt(effectivePrompt), images, audio, ocrText, history: [], memorySummary: "" }),
       ...(controller ? { signal: controller.signal } : {})
     });
     const data = await response.json().catch(() => ({}));
@@ -333,7 +355,7 @@ async function askAI() {
     resultBox.textContent = timedOut ? "Ask.Me AI did not receive a response within two minutes." : (error.message || "Unexpected request error.");
     assistantBubble.textContent = "Sorry, something went wrong: " + resultBox.textContent;
   } finally {
-    if (timeoutId) clearTimeout(timeoutId);
+    clearTimeout(timeoutId);
     buildButton.disabled = false;
     if (narratorButton) narratorButton.disabled = !lastAnswer;
   }
