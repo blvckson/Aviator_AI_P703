@@ -74,3 +74,11 @@ test("builder uses the shared response normalizer in its live request path", () 
 test("dedicated builder sends the App Builder mode to FreeApp-AI", () => {
   assert.match(builder, /mode: "app-builder"/);
 });
+
+
+test("live benchmark explicitly enforces Workers-AI-only routing and rejects fallback providers", () => {
+  assert.match(fs.readFileSync("tests/app-builder-benchmark.cjs", "utf8"), /providerPolicy: "workers-ai-only"/);
+  assert.match(fs.readFileSync("tests/app-builder-benchmark.cjs", "utf8"), /checks\.workers_ai_policy = payload\.providerPolicy === "workers-ai-only"/);
+  assert.match(fs.readFileSync("tests/app-builder-benchmark.cjs", "utf8"), /checks\.workers_ai_provider = payload\.modelProvider === "Cloudflare Workers AI"/);
+  assert.match(fs.readFileSync("tests/app-builder-benchmark.cjs", "utf8"), /checks\.workers_ai_model_reported/);
+});
