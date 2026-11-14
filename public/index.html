@@ -14,10 +14,7 @@
           <h1>Ask.Me AI</h1>
           <p>Deep reasoning, live research, screenshots, images and videos.</p>
         </div>
-        <div class="header-actions">
-          <button id="narrator-button" class="icon-button" type="button" disabled>▶ Read answer</button>
-          <button id="narrator-settings-button" class="icon-button" type="button" aria-label="Open voice cloning studio">🎙 Voice Clone</button>
-        </div>
+        <details class="more-menu"><summary aria-label="More functions" title="More functions">⋮</summary><div id="more-menu-panel" class="more-menu-panel"></div></details>
       </div>
       </header>
     <section class="card">
@@ -27,25 +24,14 @@
       </section>
       <section id="chat-messages" class="chat-messages" aria-label="Conversation" aria-live="polite"><div class="chat-empty">Your conversation will appear here.</div></section>
       <label for="prompt">Ask Ask.Me AI anything</label>
-      <textarea id="prompt" rows="8" placeholder="Ask a complex question or attach a screenshot..."></textarea>
-      <div class="controls">
-        <label class="file-button">
-          📷 Add screenshot/image
-          <input id="image-input" type="file" accept="image/*" multiple hidden>
-        </label>
-        <span id="file-status">No image selected</span>
-        <label class="file-button">
-          📎 Add documents/code
-          <input id="file-input" type="file" accept=".txt,.md,.csv,.json,.py,.js,.kt,.java,.html,.css,.xml,.log,.pdf,.docx" multiple hidden>
-        </label>
-        <span id="doc-file-status">No documents selected</span>
-        <label class="file-button">🎬 Add video
-          <input id="video-input" type="file" accept="video/*" multiple hidden>
-        </label>
-        <span id="video-file-status">No video selected</span>
-      </div>
+      <div class="composer-row"><textarea id="prompt" rows="3" placeholder="Message Ask.Me..."></textarea><details class="attach-menu"><summary aria-label="Attach image, screenshot, sound or video" title="Attach media">＋</summary><div class="attach-menu-panel">
+            <label>🖼 Image / screenshot<input id="image-input" type="file" accept="image/*" multiple hidden></label>
+            <label>🎙 Sound / audio<input id="audio-input" type="file" accept="audio/*" multiple hidden></label>
+            <label>🎬 Video<input id="video-input" type="file" accept="video/*" multiple hidden></label>
+            <label>📄 Documents / code<input id="file-input" type="file" accept=".txt,.md,.csv,.json,.py,.js,.kt,.java,.html,.css,.xml,.log,.pdf,.docx" multiple hidden></label>
+          </div></details><button id="build-button" class="send-button" type="button" aria-label="Send message">➤</button></div>
+      <div class="chat-composer"><span id="file-status" class="file-status">No media selected</span><span id="doc-file-status" hidden>No documents selected</span><span id="video-file-status" hidden>No video selected</span></div>
       <div id="preview"></div>
-      <button id="build-button" type="button">Ask Ask.Me AI</button>
       <section class="narrator-controls" aria-label="Built-in narrator controls">
         <div class="narrator-heading"><strong>Built-in narrator</strong><span id="narrator-speed-value">0.90×</span></div>
         <label for="narrator-speed">Reading speed</label>
