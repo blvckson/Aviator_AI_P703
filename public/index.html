@@ -21,6 +21,10 @@
       </div>
       </header>
     <section class="card">
+      <section class="history-panel" aria-label="Saved conversations">
+        <div class="history-heading"><strong>Chat history</strong><button id="new-chat-button" type="button">＋ New chat</button></div>
+        <div id="chat-history-list" class="chat-history-list" aria-label="Previous conversations"><span class="history-empty">Your saved chats will appear here.</span></div>
+      </section>
       <section id="chat-messages" class="chat-messages" aria-label="Conversation" aria-live="polite"><div class="chat-empty">Your conversation will appear here.</div></section>
       <label for="prompt">Ask Ask.Me AI anything</label>
       <textarea id="prompt" rows="8" placeholder="Ask a complex question or attach a screenshot..."></textarea>
