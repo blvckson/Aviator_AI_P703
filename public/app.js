@@ -14,8 +14,225 @@ let selectedImages = [];
 const narratorSettingsButton = document.getElementById("narrator-settings-button");
 const narratorModal = document.getElementById("narrator-modal");
 const narratorClose = document.getElementById("narrator-close");
-if (narratorSettingsButton) narratorSettingsButton.addEventListener("click", () => { narratorModal.hidden = false; });
-if (narratorClose) narratorClose.addEventListener("click", () => { narratorModal.hidden = true; });
+const narratorEnabled = document.getElementById("narrator-enabled");
+const narratorSpeed = document.getElementById("narrator-speed");
+const narratorSpeedValue = document.getElementById("narrator-speed-value");
+const narratorVoiceSelect = document.getElementById("narrator-voice");
+const narratorStatus = document.getElementById("narrator-status");
+
+const NARRATOR_DEFAULT_RATE = 0.90;
+const NARRATOR_MIN_RATE = 0.30;
+const NARRATOR_MAX_RATE = 1.50;
+const NARRATOR_ENABLED_KEY = "askme_narrator_enabled";
+const NARRATOR_SPEED_KEY = "askme_narrator_speed";
+const NARRATOR_VOICE_KEY = "askme_narrator_voice";
+let narratorVoices = [];
+
+if (narratorSettingsButton && narratorModal) {
+  narratorSettingsButton.addEventListener("click", () => { narratorModal.hidden = false; });
+}
+if (narratorClose && narratorModal) {
+  narratorClose.addEventListener("click", () => { narratorModal.hidden = true; });
+}
+
+function readNarratorSetting(key, fallback) {
+  try {
+    const value = window.localStorage.getItem(key);
+    return value === null ? fallback : value;
+  } catch (error) {
+    console.warn("Narrator preference could not be read:", error?.message || error);
+    return fallback;
+  }
+}
+
+function saveNarratorSetting(key, value) {
+  try {
+    window.localStorage.setItem(key, String(value));
+    return true;
+  } catch (error) {
+    console.warn("Narrator preference could not be saved:", error?.message || error);
+    updateNarratorStatus("Narrator settings could not be saved on this device.");
+    return false;
+  }
+}
+
+function updateNarratorStatus(message) {
+  try {
+    if (narratorStatus) narratorStatus.textContent = message;
+  } catch (error) {
+    console.warn("Narrator status could not be updated:", error?.message || error);
+  }
+}
+
+function getNarratorRate() {
+  const requestedRate = Number(narratorSpeed?.value);
+  if (!Number.isFinite(requestedRate)) return NARRATOR_DEFAULT_RATE;
+  return Math.min(NARRATOR_MAX_RATE, Math.max(NARRATOR_MIN_RATE, requestedRate));
+}
+
+function updateNarratorSpeedLabel() {
+  if (narratorSpeedValue) narratorSpeedValue.textContent = getNarratorRate().toFixed(2) + "×";
+}
+
+function isBrowserNarrationAvailable() {
+  return typeof window.speechSynthesis !== "undefined"
+    && typeof window.SpeechSynthesisUtterance === "function";
+}
+
+function populateNarratorVoices() {
+  if (!narratorVoiceSelect) return;
+
+  if (typeof window.speechSynthesis === "undefined"
+      || typeof window.speechSynthesis.getVoices !== "function") {
+    narratorVoiceSelect.replaceChildren();
+    const unavailable = document.createElement("option");
+    unavailable.value = "";
+    unavailable.textContent = "System voice selection unavailable";
+    narratorVoiceSelect.appendChild(unavailable);
+    narratorVoiceSelect.disabled = true;
+    return;
+  }
+
+  try {
+    narratorVoices = window.speechSynthesis.getVoices() || [];
+    const savedVoice = readNarratorSetting(NARRATOR_VOICE_KEY, "");
+    narratorVoiceSelect.replaceChildren();
+
+    const defaultOption = document.createElement("option");
+    defaultOption.value = "";
+    defaultOption.textContent = "System default voice";
+    narratorVoiceSelect.appendChild(defaultOption);
+
+    for (const voice of narratorVoices) {
+      const voiceId = String(voice.voiceURI || voice.name || "");
+      if (!voiceId) continue;
+      const option = document.createElement("option");
+      option.value = voiceId;
+      option.textContent = voice.name + (voice.lang ? " (" + voice.lang + ")" : "");
+      narratorVoiceSelect.appendChild(option);
+    }
+
+    const savedVoiceExists = narratorVoices.some(voice =>
+      String(voice.voiceURI || voice.name || "") === savedVoice
+    );
+    narratorVoiceSelect.value = savedVoiceExists ? savedVoice : "";
+    narratorVoiceSelect.disabled = false;
+
+    if (!narratorVoices.length) {
+      updateNarratorStatus("Waiting for system voices; the system default can still be used.");
+    }
+  } catch (error) {
+    narratorVoices = [];
+    narratorVoiceSelect.disabled = true;
+    updateNarratorStatus("System voice selection is unavailable; your answers will still display normally.");
+    console.warn("Narrator voice list is unavailable:", error?.message || error);
+  }
+}
+
+function stopNarration() {
+  try {
+    if (typeof window.speechSynthesis !== "undefined") window.speechSynthesis.cancel();
+    updateNarratorStatus("Narration stopped.");
+  } catch (error) {
+    updateNarratorStatus("Narration could not be stopped; your answer remains available.");
+    console.warn("Narrator stop failed:", error?.message || error);
+  }
+}
+
+function speakText(text) {
+  try {
+    const answer = String(text || "").trim();
+    if (!narratorEnabled?.checked || !answer) return;
+
+    if (!isBrowserNarrationAvailable()) {
+      updateNarratorStatus("Speech playback is not available in this browser or device. Your answer is still available.");
+      return;
+    }
+
+    const utterance = new window.SpeechSynthesisUtterance(answer);
+    utterance.rate = getNarratorRate();
+
+    const selectedVoiceId = narratorVoiceSelect?.value || readNarratorSetting(NARRATOR_VOICE_KEY, "");
+    const selectedVoice = narratorVoices.find(voice =>
+      String(voice.voiceURI || voice.name || "") === selectedVoiceId
+    );
+    if (selectedVoice) utterance.voice = selectedVoice;
+    else if (selectedVoiceId) {
+      updateNarratorStatus("The selected system voice is unavailable; using the system default.");
+    }
+
+    utterance.onstart = () => updateNarratorStatus("Reading answer aloud…");
+    utterance.onend = () => updateNarratorStatus("Finished reading.");
+    utterance.onerror = event => {
+      updateNarratorStatus("Narration failed (" + (event?.error || "playback error") + "). Your answer is still available.");
+    };
+
+    try {
+      window.speechSynthesis.cancel();
+    } catch (cancelError) {
+      console.warn("Previous narration could not be cancelled:", cancelError?.message || cancelError);
+    }
+    window.speechSynthesis.speak(utterance);
+  } catch (error) {
+    updateNarratorStatus("Narration is unavailable. Your answer is still available.");
+    console.warn("Optional narration failed:", error?.message || error);
+  }
+}
+
+function initializeNarrator() {
+  try {
+    if (narratorEnabled) {
+      narratorEnabled.checked = readNarratorSetting(NARRATOR_ENABLED_KEY, "false") === "true";
+      narratorEnabled.addEventListener("change", () => {
+        saveNarratorSetting(NARRATOR_ENABLED_KEY, narratorEnabled.checked);
+        if (!narratorEnabled.checked) stopNarration();
+        else if (!isBrowserNarrationAvailable()) {
+          updateNarratorStatus("Speech playback is unavailable here; answers will still display normally.");
+        } else {
+          updateNarratorStatus("Answer narration is on.");
+        }
+      });
+    }
+
+    if (narratorSpeed) {
+      const storedRate = Number(readNarratorSetting(NARRATOR_SPEED_KEY, String(NARRATOR_DEFAULT_RATE)));
+      const safeRate = Number.isFinite(storedRate)
+        ? Math.min(NARRATOR_MAX_RATE, Math.max(NARRATOR_MIN_RATE, storedRate))
+        : NARRATOR_DEFAULT_RATE;
+      narratorSpeed.value = safeRate.toFixed(2);
+      narratorSpeed.addEventListener("input", updateNarratorSpeedLabel);
+      narratorSpeed.addEventListener("change", () => saveNarratorSetting(NARRATOR_SPEED_KEY, getNarratorRate()));
+      updateNarratorSpeedLabel();
+    }
+
+    if (narratorVoiceSelect) {
+      narratorVoiceSelect.addEventListener("change", () => {
+        saveNarratorSetting(NARRATOR_VOICE_KEY, narratorVoiceSelect.value);
+        updateNarratorStatus("Narrator voice preference saved.");
+      });
+      populateNarratorVoices();
+    }
+
+    if (typeof window.speechSynthesis !== "undefined") {
+      if (typeof window.speechSynthesis.addEventListener === "function") {
+        window.speechSynthesis.addEventListener("voiceschanged", populateNarratorVoices);
+      } else {
+        window.speechSynthesis.onvoiceschanged = populateNarratorVoices;
+      }
+    }
+
+    const stopButton = document.getElementById("narrator-stop");
+    if (stopButton) stopButton.addEventListener("click", stopNarration);
+    if (!isBrowserNarrationAvailable()) {
+      updateNarratorStatus("Narration uses speech voices provided by your browser or device; availability may vary.");
+    }
+  } catch (error) {
+    updateNarratorStatus("Narrator settings could not be initialized. Answers remain available.");
+    console.warn("Narrator initialization failed:", error?.message || error);
+  }
+}
+
+initializeNarrator();
 
 const API_BASE = "https://freeapp-ai.lovesongmelodies.workers.dev";
 const attachButton = document.getElementById("attach-button");
@@ -61,7 +278,7 @@ async function askAI() {
     if (selfModify) {
       let ownerKey = localStorage.getItem("freeapp_ai_owner_key") || "";
       if (!ownerKey) {
-        ownerKey = window.prompt("Enter your Aviator AI owner key:");
+        ownerKey = window.prompt("Enter your Ask.Me owner key:");
         if (ownerKey) localStorage.setItem("freeapp_ai_owner_key", ownerKey);
       }
       if (!ownerKey) throw new Error("Owner key is required for self-modification.");
@@ -111,10 +328,16 @@ async function askAI() {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "The AI service returned an error.");
 
-    resultBox.textContent = data.result || "No response was returned.";
-    if (narratorDefaults.auto || narratorDefaults.enabled) {
-      if (narratorVoiceId) await playServerNarration(data.result || "No response was returned.");
-      else speakText(data.result || "No response was returned.");
+    const answer = String(data.result || "No response was returned.");
+    resultBox.textContent = answer;
+
+    // Narration is optional. Isolate it after rendering so voice/settings failures cannot
+    // turn a successful AI response into a failed request or replace the answer.
+    try {
+      speakText(answer);
+    } catch (narrationError) {
+      console.warn("Optional narration failed:", narrationError?.message || narrationError);
+      updateNarratorStatus("Narration is unavailable. Your answer is still available.");
     }
 
     renderMedia(data.media);

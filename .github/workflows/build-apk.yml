@@ -1,4 +1,4 @@
-name: Build Aviator AI APK
+name: Build Ask.Me APK
 
 on:
   pull_request:
@@ -84,25 +84,18 @@ jobs:
       - name: Build APK
         run: gradle assembleDebug --no-daemon
 
-      - name: Prepare APK A and APK B
+      - name: Verify single APK output
         shell: bash
         run: |
           set -euo pipefail
           APK="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
-          mkdir -p app/build/outputs/formats
-          cp "$APK" app/build/outputs/formats/Aviator_AI_P703_Format_A.apk
-          cp "$APK" app/build/outputs/formats/Aviator_AI_P703_Format_B.apk
-          ls -lh app/build/outputs/formats/*.apk
+          echo "Built one APK:"
+          ls -lh "$APK"
 
-      - name: Upload APK A
+      - name: Upload single Ask.Me APK
         uses: actions/upload-artifact@v4
         with:
-          name: Aviator_AI_P703_Format_A
-          path: app/build/outputs/formats/Aviator_AI_P703_Format_A.apk
-
-      - name: Upload APK B
-        uses: actions/upload-artifact@v4
-        with:
-          name: Aviator_AI_P703_Format_B
-          path: app/build/outputs/formats/Aviator_AI_P703_Format_B.apk
+          name: AskMe_P703_APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
