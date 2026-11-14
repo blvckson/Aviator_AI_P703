@@ -70,7 +70,7 @@ test("Ask.Me branding is used across the web app, private page, voice studio and
   assert.match(manifest, /android:label="Ask\.Me"/);
   assert.match(workflow, /name: Build Ask\.Me APK/);
   assert.match(workflow, /name: AskMe_P703_APK/);
-  assert.match(workflow, /app\\/build\\/outputs\\/apk\\/debug\\/app-debug\\.apk/);
+  assert.ok(workflow.includes("app/build/outputs/apk/debug/app-debug.apk"));
   assert.doesNotMatch(workflow, /Format_A|Format_B|Upload APK A|Upload APK B/);
 });
 
